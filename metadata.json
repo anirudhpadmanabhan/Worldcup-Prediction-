@@ -1,0 +1,6 @@
+{
+  "name": "FIFA World Cup 2026 Prediction Platform",
+  "description": "Premium prediction bracket and experience for the FIFA World Cup 2026, complete with custom configurations, dashboard, ad mockups, and real-time simulations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
