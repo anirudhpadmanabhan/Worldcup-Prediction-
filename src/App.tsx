@@ -38,6 +38,16 @@ export default function App() {
     dailyStreak: 0,
   });
   const [showLoginModal, setShowLoginModal] = useState(false);
+  const [pushNotifications, setPushNotifications] = useState<{ id: string; title: string; body: string; type: "completed" | "info" }[]>([]);
+
+  const triggerPushNotification = (title: string, body: string, type: "completed" | "info" = "completed") => {
+    const id = "push_" + Math.random().toString(36).substr(2, 9);
+    setPushNotifications(prev => [...prev, { id, title, body, type }]);
+    audioSynth.playTick();
+    setTimeout(() => {
+      setPushNotifications(prev => prev.filter(n => n.id !== id));
+    }, 6000);
+  };
 
   // Announcement broadcast banner states
   const [broadcasts, setBroadcasts] = useState<string[]>([
@@ -137,27 +147,8 @@ export default function App() {
         { slotId: "sidebar-widget", name: "Dashboard Sidebar Banner", impressions: sidebarImps, clicks: sidebarClicks, ctr: sidebarImps > 0 ? parseFloat(((sidebarClicks / sidebarImps) * 100).toFixed(2)) : 0, revenue: parseFloat((sidebarClicks * 0.85).toFixed(2)) },
       ]);
 
-      // Detect incremental ad click and trigger real-time bank deposits
-      if (savedClicks > prevClicksRef.current) {
-        const diff = savedClicks - prevClicksRef.current;
-        const incrementalAmount = diff * 0.85 * 83.45; // $0.85 CPC converted to INR
-        const storedUpi = localStorage.getItem("fifa_sim_upi_id") || "anirudhpkndl@okaxis";
-        const storedBankName = localStorage.getItem("fifa_sim_bank_name") || "State Bank of India";
-
-        const newNotif = {
-          id: Math.random().toString(36).substring(2, 9),
-          amount: incrementalAmount,
-          upi: storedUpi,
-          bank: storedBankName
-        };
-
-        setAdNotifications(prev => [...prev, newNotif]);
-        audioSynth.playSelection();
-
-        setTimeout(() => {
-          setAdNotifications(prev => prev.filter(n => n.id !== newNotif.id));
-        }, 5000);
-      }
+      // UPI Ad Revenue notifications disabled to avoid disturbing the user side.
+      // We still update the prevClicksRef to sync internal state seamlessly.
       prevClicksRef.current = savedClicks;
     };
 
@@ -190,6 +181,44 @@ export default function App() {
       try {
         const parsed = JSON.parse(savedBracket);
         if (parsed && parsed.roundOf32 && parsed.roundOf32.length > 0) {
+          // Force set completed matches to ensure real-time accuracy is reflected
+          let changed = false;
+          const m0 = parsed.roundOf32.find((m: any) => m.id === "r32-m0" || (m.team1Id === "ger" && m.team2Id === "par"));
+          if (m0 && (m0.winnerId !== "par" || m0.status !== "completed")) {
+            m0.winnerId = "par";
+            m0.status = "completed";
+            changed = true;
+            if (parsed.roundOf16 && parsed.roundOf16[0]) {
+              parsed.roundOf16[0].team1Id = "par";
+            }
+          }
+          const m8 = parsed.roundOf32.find((m: any) => m.id === "r32-m8" || (m.team1Id === "bra" && m.team2Id === "jpn"));
+          if (m8 && (m8.winnerId !== "bra" || m8.status !== "completed")) {
+            m8.winnerId = "bra";
+            m8.status = "completed";
+            changed = true;
+            if (parsed.roundOf16 && parsed.roundOf16[4]) {
+              parsed.roundOf16[4].team1Id = "bra";
+            }
+          }
+          const m2 = parsed.roundOf32.find((m: any) => m.id === "r32-m2" || (m.team1Id === "rsa" && m.team2Id === "can"));
+          if (m2 && (m2.winnerId !== "can" || m2.status !== "completed")) {
+            m2.winnerId = "can";
+            m2.status = "completed";
+            changed = true;
+            if (parsed.roundOf16 && parsed.roundOf16[1]) {
+              parsed.roundOf16[1].team1Id = "can";
+            }
+          }
+          const m3 = parsed.roundOf32.find((m: any) => m.id === "r32-m3" || (m.team1Id === "ned" && m.team2Id === "mar"));
+          if (m3 && (m3.winnerId !== "mar" || m3.status !== "completed")) {
+            m3.winnerId = "mar";
+            m3.status = "completed";
+            changed = true;
+            if (parsed.roundOf16 && parsed.roundOf16[1]) {
+              parsed.roundOf16[1].team2Id = "mar";
+            }
+          }
           setBracket(parsed);
           return;
         }
@@ -201,45 +230,57 @@ export default function App() {
     // Generate matches aligned with the official bracket top-to-bottom layout
     const r32Pairings = [
       // Left Side of Bracket (top-to-bottom of image)
-      { teams: ["ger", "par"], date: "Tue, 30 Jun, 2:00 AM", timestamp: new Date("2026-06-30T02:00:00Z").getTime() },
-      { teams: ["fra", "swe"], date: "Wed, 1 Jul, 2:30 AM", timestamp: new Date("2026-07-01T02:30:00Z").getTime() },
-      { teams: ["rsa", "can"], date: "Sun, 28 Jun, 7:30 PM", timestamp: new Date("2026-06-28T19:30:00Z").getTime() },
-      { teams: ["ned", "mar"], date: "Tue, 30 Jun, 6:30 AM", timestamp: new Date("2026-06-30T06:30:00Z").getTime() },
-      { teams: ["por", "cro"], date: "Fri, 3 Jul, 4:30 AM", timestamp: new Date("2026-07-03T04:30:00Z").getTime() },
-      { teams: ["spa", "aut"], date: "Fri, 3 Jul, 12:30 AM", timestamp: new Date("2026-07-03T00:30:00Z").getTime() },
-      { teams: ["usa", "bos"], date: "Thu, 2 Jul, 5:30 AM", timestamp: new Date("2026-07-02T05:30:00Z").getTime() },
-      { teams: ["bel", "sen"], date: "Thu, 2 Jul, 1:30 AM", timestamp: new Date("2026-07-02T01:30:00Z").getTime() },
+      { teams: ["ger", "par"], date: "Tue, 30 Jun, 3:00 PM", timestamp: new Date("2026-06-30T15:00:00Z").getTime() },
+      { teams: ["fra", "swe"], date: "Wed, 1 Jul, 3:00 PM", timestamp: new Date("2026-07-01T15:00:00Z").getTime() },
+      { teams: ["rsa", "can"], date: "Sun, 28 Jun, 3:00 PM", timestamp: new Date("2026-06-28T15:00:00Z").getTime() },
+      { teams: ["ned", "mar"], date: "Tue, 30 Jun, 6:00 PM", timestamp: new Date("2026-06-30T18:00:00Z").getTime() },
+      { teams: ["por", "cro"], date: "Fri, 3 Jul, 3:00 PM", timestamp: new Date("2026-07-03T15:00:00Z").getTime() },
+      { teams: ["spa", "aut"], date: "Fri, 3 Jul, 12:00 PM", timestamp: new Date("2026-07-03T12:00:00Z").getTime() },
+      { teams: ["usa", "bos"], date: "Thu, 2 Jul, 6:00 PM", timestamp: new Date("2026-07-02T18:00:00Z").getTime() },
+      { teams: ["bel", "sen"], date: "Thu, 2 Jul, 3:00 PM", timestamp: new Date("2026-07-02T15:00:00Z").getTime() },
 
       // Right Side of Bracket (top-to-bottom of image)
-      { teams: ["bra", "jpn"], date: "Mon, 29 Jun, 10:30 PM", timestamp: new Date("2026-06-29T22:30:00Z").getTime() },
-      { teams: ["civ", "nor"], date: "Tue, 30 Jun, 10:30 PM", timestamp: new Date("2026-06-30T22:30:00Z").getTime() },
-      { teams: ["mex", "ecu"], date: "Wed, 1 Jul, 6:30 AM", timestamp: new Date("2026-07-01T06:30:00Z").getTime() },
-      { teams: ["eng", "cod"], date: "Wed, 1 Jul, 9:30 PM", timestamp: new Date("2026-07-01T21:30:00Z").getTime() },
-      { teams: ["arg", "cpv"], date: "Fri, 3 Jul, 3:30 PM", timestamp: new Date("2026-07-03T15:30:00Z").getTime() },
-      { teams: ["aus", "egy"], date: "Fri, 3 Jul, 11:30 PM", timestamp: new Date("2026-07-03T23:30:00Z").getTime() },
-      { teams: ["swi", "alg"], date: "Fri, 3 Jul, 8:30 AM", timestamp: new Date("2026-07-03T08:30:00Z").getTime() },
+      { teams: ["bra", "jpn"], date: "Mon, 29 Jun, 3:00 PM", timestamp: new Date("2026-06-29T15:00:00Z").getTime() },
+      { teams: ["civ", "nor"], date: "Tue, 30 Jun, 9:00 PM", timestamp: new Date("2026-06-30T21:00:00Z").getTime() },
+      { teams: ["mex", "ecu"], date: "Wed, 1 Jul, 6:00 PM", timestamp: new Date("2026-07-01T18:00:00Z").getTime() },
+      { teams: ["eng", "cod"], date: "Wed, 1 Jul, 9:00 PM", timestamp: new Date("2026-07-01T21:00:00Z").getTime() },
+      { teams: ["arg", "cpv"], date: "Fri, 3 Jul, 6:00 PM", timestamp: new Date("2026-07-03T18:00:00Z").getTime() },
+      { teams: ["aus", "egy"], date: "Fri, 3 Jul, 9:00 PM", timestamp: new Date("2026-07-03T21:00:00Z").getTime() },
+      { teams: ["swi", "alg"], date: "Fri, 3 Jul, 1:00 PM", timestamp: new Date("2026-07-03T13:00:00Z").getTime() },
       { teams: ["col", "gha"], date: "Fri, 3 Jul, 7:00 PM", timestamp: new Date("2026-07-03T19:00:00Z").getTime() },
     ];
 
     const initialR32 = r32Pairings.map((pair, i) => {
       const isRsaCan = pair.teams.includes("rsa") && pair.teams.includes("can");
+      const isBraJpn = pair.teams.includes("bra") && pair.teams.includes("jpn");
+      const isGerPar = pair.teams.includes("ger") && pair.teams.includes("par");
+      const isNedMar = pair.teams.includes("ned") && pair.teams.includes("mar");
       return {
         id: `r32-m${i}`,
         team1Id: pair.teams[0],
         team2Id: pair.teams[1],
-        winnerId: isRsaCan ? "can" : null,
+        winnerId: isRsaCan ? "can" : (isBraJpn ? "bra" : (isGerPar ? "par" : (isNedMar ? "mar" : null))),
         date: pair.date,
         timestamp: pair.timestamp,
-        status: (isRsaCan ? "completed" : "scheduled") as "completed" | "scheduled",
+        status: (isRsaCan || isBraJpn || isGerPar || isNedMar ? "completed" : "scheduled") as "completed" | "scheduled",
       };
     });
 
     const initialR16 = Array.from({ length: 8 }, (_, i) => {
       const day = 4 + Math.floor(i / 2); // July 4, 5, 6, 7
+      let team1Id: string | null = null;
+      let team2Id: string | null = null;
+      if (i === 0) team1Id = "par";
+      else if (i === 1) {
+        team1Id = "can";
+        team2Id = "mar";
+      }
+      else if (i === 4) team1Id = "bra";
+
       return {
         id: `r16-m${i}`,
-        team1Id: i === 1 ? "can" : null,
-        team2Id: null,
+        team1Id,
+        team2Id,
         team1Placeholder: `Winner R32 Match ${i * 2 + 1}`,
         team2Placeholder: `Winner R32 Match ${i * 2 + 2}`,
         winnerId: null,
@@ -295,6 +336,42 @@ export default function App() {
       finals: initialF,
       champion: null,
     });
+  }, []);
+
+  // Trigger staggered push notifications for already completed matches on mount
+  useEffect(() => {
+    const notificationsToTrigger = [
+      {
+        delay: 3000,
+        title: "Match Completed (R32)",
+        body: "🇿🇦 South Africa vs 🇨🇦 Canada (0 - 2). Canada advances to the Round of 16!"
+      },
+      {
+        delay: 8000,
+        title: "Match Completed (R32)",
+        body: "🇧🇷 Brazil vs 🇯🇵 Japan (2 - 0). Brazil secures their Round of 16 spot!"
+      },
+      {
+        delay: 13000,
+        title: "Match Completed (R32)",
+        body: "🇩🇪 Germany vs 🇵🇾 Paraguay (1 - 2). Stunning upset by Paraguay!"
+      },
+      {
+        delay: 18000,
+        title: "Match Completed (R32)",
+        body: "🇳🇱 Netherlands vs 🇲🇦 Morocco (1 - 2). Morocco wins and advances!"
+      }
+    ];
+
+    const timers = notificationsToTrigger.map(notif => {
+      return setTimeout(() => {
+        triggerPushNotification(notif.title, notif.body);
+      }, notif.delay);
+    });
+
+    return () => {
+      timers.forEach(clearTimeout);
+    };
   }, []);
 
   // Save bracket and sync to central database under active user
@@ -364,7 +441,7 @@ export default function App() {
   const isAdmin = user.isLoggedIn && user.email === "anirudhpkndl@gmail.com";
 
   useEffect(() => {
-    if (!isAdmin && activeTab !== "bracket") {
+    if (!isAdmin && activeTab !== "bracket" && activeTab !== "dashboard") {
       setActiveTab("bracket");
     }
   }, [user, activeTab, isAdmin]);
@@ -469,34 +546,48 @@ export default function App() {
                 </div>
 
                 {/* Tab Navigation Controls */}
-                {isAdmin && (
-                  <nav className="hidden md:flex items-center gap-1 bg-neutral-900/60 p-1 rounded-xl border border-white/5">
+                <nav className="hidden md:flex items-center gap-1 bg-neutral-900/60 p-1 rounded-xl border border-white/5">
+                  <button
+                    onClick={() => { setActiveTab("bracket"); audioSynth.playTick(); }}
+                    className={`px-5 py-2 rounded-lg text-xs font-bold tracking-wider uppercase transition cursor-pointer ${
+                      activeTab === "bracket" ? "bg-yellow-500 text-black shadow-md" : "text-neutral-400 hover:text-white"
+                    }`}
+                  >
+                    Bracket
+                  </button>
+                  
+                  {(user.isLoggedIn || localStorage.getItem("fifa_user_bracket")) && (
                     <button
-                      onClick={() => { setActiveTab("bracket"); audioSynth.playTick(); }}
+                      onClick={() => { setActiveTab("dashboard"); audioSynth.playTick(); }}
                       className={`px-5 py-2 rounded-lg text-xs font-bold tracking-wider uppercase transition cursor-pointer ${
-                        activeTab === "bracket" ? "bg-yellow-500 text-black shadow-md" : "text-neutral-400 hover:text-white"
+                        activeTab === "dashboard" ? "bg-yellow-500 text-black shadow-md" : "text-neutral-400 hover:text-white"
                       }`}
                     >
-                      Bracket
+                      Dashboard
                     </button>
-                    <button
-                      onClick={() => { setActiveTab("ads"); audioSynth.playTick(); }}
-                      className={`px-5 py-2 rounded-lg text-xs font-bold tracking-wider uppercase transition cursor-pointer ${
-                        activeTab === "ads" ? "bg-yellow-500 text-black shadow-md" : "text-neutral-400 hover:text-white"
-                      }`}
-                    >
-                      Ads Manager
-                    </button>
-                    <button
-                      onClick={() => { setActiveTab("admin"); audioSynth.playTick(); }}
-                      className={`px-5 py-2 rounded-lg text-xs font-bold tracking-wider uppercase transition cursor-pointer ${
-                        activeTab === "admin" ? "bg-red-500 text-white shadow-md" : "text-neutral-400 hover:text-white"
-                      }`}
-                    >
-                      Admin Portal
-                    </button>
-                  </nav>
-                )}
+                  )}
+
+                  {isAdmin && (
+                    <>
+                      <button
+                        onClick={() => { setActiveTab("ads"); audioSynth.playTick(); }}
+                        className={`px-5 py-2 rounded-lg text-xs font-bold tracking-wider uppercase transition cursor-pointer ${
+                          activeTab === "ads" ? "bg-yellow-500 text-black shadow-md" : "text-neutral-400 hover:text-white"
+                        }`}
+                      >
+                        Ads Manager
+                      </button>
+                      <button
+                        onClick={() => { setActiveTab("admin"); audioSynth.playTick(); }}
+                        className={`px-5 py-2 rounded-lg text-xs font-bold tracking-wider uppercase transition cursor-pointer ${
+                          activeTab === "admin" ? "bg-red-500 text-white shadow-md" : "text-neutral-400 hover:text-white"
+                        }`}
+                      >
+                        Admin Portal
+                      </button>
+                    </>
+                  )}
+                </nav>
 
                 {/* Right side utilities */}
                 <div className="flex items-center gap-2 sm:gap-4 shrink-0">
@@ -544,34 +635,48 @@ export default function App() {
               </div>
 
               {/* Mobile Tab navigation drawer bar */}
-              {isAdmin && (
-                <div className="md:hidden flex border-t border-white/5 p-1 bg-neutral-900/40 gap-1 overflow-x-auto justify-around">
+              <div className="md:hidden flex border-t border-white/5 p-1 bg-neutral-900/40 gap-1 overflow-x-auto justify-around">
+                <button
+                  onClick={() => { setActiveTab("bracket"); audioSynth.playTick(); }}
+                  className={`flex-1 py-1.5 px-3 rounded-lg text-[10px] font-bold tracking-wider uppercase transition cursor-pointer text-center ${
+                    activeTab === "bracket" ? "bg-yellow-500 text-black" : "text-neutral-400"
+                  }`}
+                >
+                  Bracket
+                </button>
+                
+                {(user.isLoggedIn || localStorage.getItem("fifa_user_bracket")) && (
                   <button
-                    onClick={() => { setActiveTab("bracket"); audioSynth.playTick(); }}
+                    onClick={() => { setActiveTab("dashboard"); audioSynth.playTick(); }}
                     className={`flex-1 py-1.5 px-3 rounded-lg text-[10px] font-bold tracking-wider uppercase transition cursor-pointer text-center ${
-                      activeTab === "bracket" ? "bg-yellow-500 text-black" : "text-neutral-400"
+                      activeTab === "dashboard" ? "bg-yellow-500 text-black" : "text-neutral-400"
                     }`}
                   >
-                    Bracket
+                    Dashboard
                   </button>
-                  <button
-                    onClick={() => { setActiveTab("ads"); audioSynth.playTick(); }}
-                    className={`flex-1 py-1.5 px-3 rounded-lg text-[10px] font-bold tracking-wider uppercase transition cursor-pointer text-center ${
-                      activeTab === "ads" ? "bg-yellow-500 text-black" : "text-neutral-400"
-                    }`}
-                  >
-                    Ads
-                  </button>
-                  <button
-                    onClick={() => { setActiveTab("admin"); audioSynth.playTick(); }}
-                    className={`flex-1 py-1.5 px-3 rounded-lg text-[10px] font-bold tracking-wider uppercase transition cursor-pointer text-center ${
-                      activeTab === "admin" ? "bg-red-500 text-white" : "text-neutral-400"
-                    }`}
-                  >
-                    Admin
-                  </button>
-                </div>
-              )}
+                )}
+
+                {isAdmin && (
+                  <>
+                    <button
+                      onClick={() => { setActiveTab("ads"); audioSynth.playTick(); }}
+                      className={`flex-1 py-1.5 px-3 rounded-lg text-[10px] font-bold tracking-wider uppercase transition cursor-pointer text-center ${
+                        activeTab === "ads" ? "bg-yellow-500 text-black" : "text-neutral-400"
+                      }`}
+                    >
+                      Ads
+                    </button>
+                    <button
+                      onClick={() => { setActiveTab("admin"); audioSynth.playTick(); }}
+                      className={`flex-1 py-1.5 px-3 rounded-lg text-[10px] font-bold tracking-wider uppercase transition cursor-pointer text-center ${
+                        activeTab === "admin" ? "bg-red-500 text-white" : "text-neutral-400"
+                      }`}
+                    >
+                      Admin
+                    </button>
+                  </>
+                )}
+              </div>
             </header>
 
             {/* Main Section Content Stage */}
@@ -600,6 +705,7 @@ export default function App() {
                       setBracket={setBracket} 
                       onChampionSelected={handleChampionChosen} 
                       lang={lang}
+                      onNavigateTab={setActiveTab}
                     />
 
                     {/* Highly Polished Football In-Feed Google AdSense Leaderboard Banner */}
@@ -626,6 +732,9 @@ export default function App() {
                       lang={lang} 
                       onAdClicked={handleAdClick}
                       publisherId={adSettings.publisherId}
+                      bracket={bracket}
+                      setBracket={setBracket}
+                      onNavigateTab={setActiveTab}
                     />
                   </motion.div>
                 )}
@@ -642,6 +751,8 @@ export default function App() {
                       lang={lang} 
                       predictionsFrozen={predictionsFrozen}
                       setPredictionsFrozen={setPredictionsFrozen}
+                      user={user}
+                      setUser={setUser}
                     />
                   </motion.div>
                 )}
@@ -676,8 +787,8 @@ export default function App() {
             {/* Footer Credits */}
             <footer className="w-full border-t border-white/5 py-6 text-center text-[11px] font-mono text-neutral-500">
               <div className="max-w-7xl mx-auto px-6 flex flex-col sm:flex-row justify-between items-center gap-4">
-                <span>© 2026 FIFA World Cup Prediction Platform. All Rights Reserved.</span>
-                <span className="text-yellow-500/80">Developed with Apple + FIFA + EA Sports Aesthetics</span>
+                <span>© 2026 FIFA World Cup Prediction Platform.</span>
+                <span>HOST CITY: UNITED STATES • MEXICO • CANADA</span>
               </div>
             </footer>
 
@@ -696,7 +807,7 @@ export default function App() {
               )}
             </AnimatePresence>
 
-            {/* 2. Login Sync gate overlay */}
+             {/* 2. Login Sync gate overlay */}
             <AnimatePresence>
               {showLoginModal && (
                 <LoginModal 
@@ -707,42 +818,39 @@ export default function App() {
               )}
             </AnimatePresence>
 
-            {/* 3. Real-Time UPI Ad Revenue Deposit Toast Overlay */}
-            <div className="fixed bottom-24 right-4 z-[9999] space-y-3 pointer-events-none max-w-sm w-full px-4 sm:px-0">
+            {/* Real-time Push Notifications Container */}
+            <div className="fixed top-4 right-4 z-50 space-y-3 max-w-sm w-full pointer-events-none">
               <AnimatePresence>
-                {adNotifications.map(notif => (
+                {pushNotifications.map((notif) => (
                   <motion.div
                     key={notif.id}
-                    initial={{ opacity: 0, y: 30, scale: 0.9 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: -20, scale: 0.9 }}
-                    className="bg-neutral-950/95 border-2 border-emerald-500/60 rounded-2xl p-4 shadow-[0_12px_40px_rgba(16,185,129,0.35)] pointer-events-auto flex items-start gap-3.5 backdrop-blur-xl relative overflow-hidden"
+                    initial={{ x: 100, y: -20, opacity: 0, scale: 0.9 }}
+                    animate={{ x: 0, y: 0, opacity: 1, scale: 1 }}
+                    exit={{ x: 100, opacity: 0, scale: 0.9 }}
+                    className="bg-neutral-900/95 border border-emerald-500/30 rounded-2xl p-4 shadow-2xl backdrop-blur-md pointer-events-auto flex gap-3 items-start relative overflow-hidden"
                   >
-                    {/* Glowing Accent line */}
-                    <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-500 via-teal-400 to-yellow-400" />
-                    <div className="w-9 h-9 rounded-xl bg-emerald-500/20 flex items-center justify-center border border-emerald-500/40 text-emerald-400 shrink-0 font-bold text-base animate-pulse">
-                      ₹
-                    </div>
-                    <div className="flex-1 space-y-0.5 text-left">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[9px] font-mono text-emerald-400 font-black uppercase tracking-widest">
-                          UPI Deposit Credit
-                        </span>
-                        <span className="text-[9px] font-mono text-neutral-500 font-bold uppercase">
-                          IMPS • SUCCESS
-                        </span>
-                      </div>
-                      <h4 className="text-xs font-black text-white font-sans">
-                        ₹{notif.amount.toFixed(2)} Credited Successfully
+                    <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-emerald-500 to-teal-500" />
+                    <span className="text-xl mt-0.5 select-none">🏆</span>
+                    <div className="flex-1 space-y-1">
+                      <h4 className="text-[11px] font-black text-white uppercase tracking-wider font-sans flex items-center gap-1.5">
+                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                        {notif.title}
                       </h4>
-                      <p className="text-[10px] text-neutral-400 font-mono leading-relaxed">
-                        Received from <span className="text-emerald-400 font-bold">Google AdSense</span>. Dispatched directly to UPI ID <span className="text-yellow-400 font-bold">{notif.upi}</span> at <span className="text-white font-semibold">{notif.bank}</span>.
-                      </p>
+                      <p className="text-[10px] text-neutral-300 font-mono leading-normal">{notif.body}</p>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => setPushNotifications(prev => prev.filter(n => n.id !== notif.id))}
+                      className="text-neutral-500 hover:text-white transition p-1 text-xs cursor-pointer font-bold"
+                    >
+                      ×
+                    </button>
                   </motion.div>
                 ))}
               </AnimatePresence>
             </div>
+
+            {/* Real-Time UPI Ad Revenue Deposit Toast Overlay removed for user-side peace-of-mind */}
 
           </motion.div>
         )}

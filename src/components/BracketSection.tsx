@@ -12,13 +12,15 @@ interface BracketSectionProps {
   setBracket: React.Dispatch<React.SetStateAction<Bracket>>;
   onChampionSelected: (team: Team) => void;
   lang: LanguageCode;
+  onNavigateTab?: (tab: "bracket" | "dashboard" | "admin" | "ads") => void;
 }
 
-export default function BracketSection({ bracket, setBracket, onChampionSelected, lang }: BracketSectionProps) {
+export default function BracketSection({ bracket, setBracket, onChampionSelected, lang, onNavigateTab }: BracketSectionProps) {
   const [activeRound, setActiveRound] = useState<"r32" | "r16" | "qf" | "sf" | "f">("r32");
   const [sortBy, setSortBy] = useState<"bracket" | "date">("bracket");
   const [lastPredictedMatchId, setLastPredictedMatchId] = useState<string | null>(null);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [coords, setCoords] = useState<{ x1: number; y1: number; x2: number; y2: number; active: boolean; winnerPredicted: boolean }[]>([]);
   
   // Refs to auto scroll to next rounds
   const r32Ref = useRef<HTMLDivElement>(null);
@@ -29,6 +31,84 @@ export default function BracketSection({ bracket, setBracket, onChampionSelected
   const champRef = useRef<HTMLDivElement>(null);
 
   const t = TRANSLATIONS[lang];
+
+  useEffect(() => {
+    const updateCoords = () => {
+      const container = document.getElementById("bracket-tree-inner");
+      if (!container) return;
+
+      const containerRect = container.getBoundingClientRect();
+      const newCoords: typeof coords = [];
+
+      // Helper to add a connection
+      const addConnection = (el1Id: string, el2Id: string, isWinnerSelected: boolean, isWinnerCorrect: boolean) => {
+        const el1 = document.getElementById(el1Id);
+        const el2 = document.getElementById(el2Id);
+        if (el1 && el2) {
+          const rect1 = el1.getBoundingClientRect();
+          const rect2 = el2.getBoundingClientRect();
+
+          const x1 = rect1.right - containerRect.left;
+          const y1 = rect1.top + rect1.height / 2 - containerRect.top;
+
+          const x2 = rect2.left - containerRect.left;
+          const y2 = rect2.top + rect2.height / 2 - containerRect.top;
+
+          newCoords.push({ x1, y1, x2, y2, active: isWinnerSelected, winnerPredicted: isWinnerCorrect });
+        }
+      };
+
+      // 1. R32 to R16
+      bracket.roundOf32.forEach((match, i) => {
+        const originalIdx = i;
+        const nextIdx = Math.floor(originalIdx / 2);
+        const winnerSelected = match.winnerId !== null;
+        addConnection(`match-card-r32-${match.id}`, `match-card-r16-r16-m${nextIdx}`, winnerSelected, winnerSelected);
+      });
+
+      // 2. R16 to QF
+      bracket.roundOf16.forEach((match, i) => {
+        const nextIdx = Math.floor(i / 2);
+        const winnerSelected = match.winnerId !== null;
+        addConnection(`match-card-r16-${match.id}`, `match-card-qf-qf-m${nextIdx}`, winnerSelected, winnerSelected);
+      });
+
+      // 3. QF to SF
+      bracket.quarterFinals.forEach((match, i) => {
+        const nextIdx = Math.floor(i / 2);
+        const winnerSelected = match.winnerId !== null;
+        addConnection(`match-card-qf-${match.id}`, `match-card-sf-sf-m${nextIdx}`, winnerSelected, winnerSelected);
+      });
+
+      // 4. SF to F
+      bracket.semiFinals.forEach((match, i) => {
+        const winnerSelected = match.winnerId !== null;
+        addConnection(`match-card-sf-${match.id}`, `match-card-f-f-m0`, winnerSelected, winnerSelected);
+      });
+
+      // 5. F to Champ
+      if (bracket.finals[0]) {
+        const winnerSelected = bracket.finals[0].winnerId !== null;
+        addConnection(`match-card-f-f-m0`, `match-card-champ`, winnerSelected, winnerSelected);
+      }
+
+      setCoords(newCoords);
+    };
+
+    updateCoords();
+    window.addEventListener("resize", updateCoords);
+    
+    const timer1 = setTimeout(updateCoords, 100);
+    const timer2 = setTimeout(updateCoords, 300);
+    const timer3 = setTimeout(updateCoords, 600);
+
+    return () => {
+      window.removeEventListener("resize", updateCoords);
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+      clearTimeout(timer3);
+    };
+  }, [bracket, activeRound, sortBy]);
 
   // Auto-advance to the next incomplete match to eliminate any confusion
   useEffect(() => {
@@ -337,18 +417,30 @@ export default function BracketSection({ bracket, setBracket, onChampionSelected
     audioSynth.playCinematicZoom();
     const freshR32 = bracket.roundOf32.map(m => {
       const isRsaCan = m.team1Id === "rsa" && m.team2Id === "can";
+      const isBraJpn = m.team1Id === "bra" && m.team2Id === "jpn";
+      const isGerPar = m.team1Id === "ger" && m.team2Id === "par";
+      const isNedMar = m.team1Id === "ned" && m.team2Id === "mar";
       return {
         ...m,
-        winnerId: isRsaCan ? "can" : null,
-        status: (isRsaCan ? "completed" : "scheduled") as "completed" | "scheduled"
+        winnerId: isRsaCan ? "can" : (isBraJpn ? "bra" : (isGerPar ? "par" : (isNedMar ? "mar" : null))),
+        status: (isRsaCan || isBraJpn || isGerPar || isNedMar ? "completed" : "scheduled") as "completed" | "scheduled"
       };
     });
     const freshR16 = Array.from({ length: 8 }, (_, i) => {
       const day = 4 + Math.floor(i / 2);
+      let team1Id: string | null = null;
+      let team2Id: string | null = null;
+      if (i === 0) team1Id = "par";
+      else if (i === 1) {
+        team1Id = "can";
+        team2Id = "mar";
+      }
+      else if (i === 4) team1Id = "bra";
+
       return {
         id: `r16-m${i}`,
-        team1Id: i === 1 ? "can" : null,
-        team2Id: null,
+        team1Id,
+        team2Id,
         team1Placeholder: `Winner R32 Match ${i * 2 + 1}`,
         team2Placeholder: `Winner R32 Match ${i * 2 + 2}`,
         winnerId: null,
@@ -465,6 +557,20 @@ export default function BracketSection({ bracket, setBracket, onChampionSelected
 
   return (
     <div className="w-full flex flex-col gap-8 pb-16">
+      {onNavigateTab && (
+        <div className="flex justify-start">
+          <button
+            onClick={() => {
+              onNavigateTab("dashboard");
+              audioSynth.playSelection();
+            }}
+            className="flex items-center gap-2 bg-neutral-900/80 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-white/10 text-xs font-bold px-4 py-2.5 rounded-xl transition cursor-pointer shadow-lg active:scale-95 uppercase tracking-wider font-mono"
+          >
+            ← BACK TO ARENA DASHBOARD
+          </button>
+        </div>
+      )}
+
       {/* Dynamic Header Metrics Bar */}
       <div className="w-full bg-neutral-950/80 border border-white/10 rounded-2xl p-6 flex flex-col md:flex-row items-center justify-between gap-6 backdrop-blur-xl shadow-lg relative overflow-hidden">
         {/* Decorative Grid Accent */}
@@ -527,8 +633,44 @@ export default function BracketSection({ bracket, setBracket, onChampionSelected
       </div>
 
       {/* Main Bracket Interactive Scrolling Tree */}
-      <div className="w-full overflow-x-auto overflow-y-hidden py-8 px-4 scrollbar-thin scrollbar-thumb-neutral-800">
-        <div className="min-w-[1400px] flex gap-12 items-stretch justify-between relative">
+      <div id="bracket-tree-container" className="w-full overflow-x-auto overflow-y-hidden py-8 px-4 scrollbar-thin scrollbar-thumb-neutral-800 relative">
+        <div id="bracket-tree-inner" className="min-w-[1400px] flex gap-12 items-stretch justify-between relative">
+          {/* Overlay SVG for Connecting Lines */}
+          <svg className="absolute inset-0 pointer-events-none w-full h-full z-0">
+            <g strokeLinecap="round" strokeLinejoin="round">
+              {coords.map((line, idx) => {
+                const xmid = line.x1 + (line.x2 - line.x1) / 2;
+                const pathD = `M ${line.x1} ${line.y1} H ${xmid} V ${line.y2} H ${line.x2}`;
+                return (
+                  <g key={idx}>
+                    {/* Background glow for active lines */}
+                    {line.active && (
+                      <path
+                        d={pathD}
+                        stroke={line.winnerPredicted ? "#10b981" : "#eab308"}
+                        strokeWidth={6}
+                        strokeOpacity={0.15}
+                        fill="none"
+                        className="blur-sm"
+                      />
+                    )}
+                    {/* Foreground crisp path line */}
+                    <path
+                      d={pathD}
+                      stroke={line.active 
+                        ? (line.winnerPredicted ? "#10b981" : "#eab308") 
+                        : "rgba(255, 255, 255, 0.05)"
+                      }
+                      strokeWidth={line.active ? 2.5 : 1.5}
+                      strokeDasharray={line.active ? "none" : "3 3"}
+                      fill="none"
+                      className="transition-all duration-300"
+                    />
+                  </g>
+                );
+              })}
+            </g>
+          </svg>
           
           {/* ================= ROUND OF 32 ================= */}
           <div ref={r32Ref} className="flex-1 flex flex-col justify-around gap-4 min-w-[260px]">
@@ -580,6 +722,11 @@ export default function BracketSection({ bracket, setBracket, onChampionSelected
                     </div>
                     {renderCountryCard(match.team1Id, "Team A", match.winnerId === match.team1Id, () => selectWinner("r32", originalIdx, match.team1Id!), match.team1Id !== null && match.status !== "completed")}
                     {renderCountryCard(match.team2Id, "Team B", match.winnerId === match.team2Id, () => selectWinner("r32", originalIdx, match.team2Id!), match.team2Id !== null && match.status !== "completed")}
+                    {match.winnerId && (
+                      <div className="mt-1 text-[8px] font-mono text-emerald-400 flex items-center justify-center gap-1 bg-emerald-500/10 py-1 px-2 rounded-lg border border-emerald-500/20 animate-pulse">
+                        <Zap className="w-2.5 h-2.5" /> ADVANCES TO R16 M{Math.floor(originalIdx / 2) + 1}
+                      </div>
+                    )}
                   </div>
                 );
               });
@@ -600,6 +747,11 @@ export default function BracketSection({ bracket, setBracket, onChampionSelected
                 </span>
                 {renderCountryCard(match.team1Id, match.team1Placeholder || "Winner Match", match.winnerId === match.team1Id, () => selectWinner("r16", idx, match.team1Id!), match.team1Id !== null)}
                 {renderCountryCard(match.team2Id, match.team2Placeholder || "Winner Match", match.winnerId === match.team2Id, () => selectWinner("r16", idx, match.team2Id!), match.team2Id !== null)}
+                {match.winnerId && (
+                  <div className="mt-1 text-[8px] font-mono text-emerald-400 flex items-center justify-center gap-1 bg-emerald-500/10 py-1 px-2 rounded-lg border border-emerald-500/20 animate-pulse">
+                    <Zap className="w-2.5 h-2.5" /> ADVANCES TO QF M{Math.floor(idx / 2) + 1}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -618,6 +770,11 @@ export default function BracketSection({ bracket, setBracket, onChampionSelected
                 </span>
                 {renderCountryCard(match.team1Id, match.team1Placeholder || "Winner R16", match.winnerId === match.team1Id, () => selectWinner("qf", idx, match.team1Id!), match.team1Id !== null)}
                 {renderCountryCard(match.team2Id, match.team2Placeholder || "Winner R16", match.winnerId === match.team2Id, () => selectWinner("qf", idx, match.team2Id!), match.team2Id !== null)}
+                {match.winnerId && (
+                  <div className="mt-1 text-[8px] font-mono text-emerald-400 flex items-center justify-center gap-1 bg-emerald-500/10 py-1 px-2 rounded-lg border border-emerald-500/20 animate-pulse">
+                    <Zap className="w-2.5 h-2.5" /> ADVANCES TO SF M{Math.floor(idx / 2) + 1}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -636,6 +793,11 @@ export default function BracketSection({ bracket, setBracket, onChampionSelected
                 </span>
                 {renderCountryCard(match.team1Id, match.team1Placeholder || "Winner QF", match.winnerId === match.team1Id, () => selectWinner("sf", idx, match.team1Id!), match.team1Id !== null)}
                 {renderCountryCard(match.team2Id, match.team2Placeholder || "Winner QF", match.winnerId === match.team2Id, () => selectWinner("sf", idx, match.team2Id!), match.team2Id !== null)}
+                {match.winnerId && (
+                  <div className="mt-1 text-[8px] font-mono text-emerald-400 flex items-center justify-center gap-1 bg-emerald-500/10 py-1 px-2 rounded-lg border border-emerald-500/20 animate-pulse">
+                    <Zap className="w-2.5 h-2.5" /> ADVANCES TO WORLD CUP FINAL
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -654,6 +816,11 @@ export default function BracketSection({ bracket, setBracket, onChampionSelected
                 </span>
                 {renderCountryCard(match.team1Id, match.team1Placeholder || "Winner SF 1", match.winnerId === match.team1Id, () => selectWinner("f", idx, match.team1Id!), match.team1Id !== null)}
                 {renderCountryCard(match.team2Id, match.team2Placeholder || "Winner SF 2", match.winnerId === match.team2Id, () => selectWinner("f", idx, match.team2Id!), match.team2Id !== null)}
+                {match.winnerId && (
+                  <div className="mt-1 text-[8px] font-mono text-yellow-400 flex items-center justify-center gap-1 bg-yellow-500/10 py-1 px-2 rounded-lg border border-yellow-500/20 animate-pulse">
+                    <Trophy className="w-2.5 h-2.5" /> WORLD CUP CHAMPION!
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -663,7 +830,7 @@ export default function BracketSection({ bracket, setBracket, onChampionSelected
             <span className="text-xs font-bold tracking-widest font-mono text-yellow-500 uppercase mb-4">
               {t.championLabel}
             </span>
-            <div className="w-40 h-40 rounded-full bg-gradient-to-tr from-yellow-500/10 to-amber-500/20 border border-yellow-500/40 flex items-center justify-center shadow-[0_0_40px_rgba(234,179,8,0.2)] relative group hover:border-yellow-500 transition-all duration-300">
+            <div id="match-card-champ" className="w-40 h-40 rounded-full bg-gradient-to-tr from-yellow-500/10 to-amber-500/20 border border-yellow-500/40 flex items-center justify-center shadow-[0_0_40px_rgba(234,179,8,0.2)] relative group hover:border-yellow-500 transition-all duration-300">
               <div className="absolute inset-2 rounded-full border border-dashed border-yellow-500/20" />
               {bracket.champion ? (
                 <div className="flex flex-col items-center gap-2 text-center">

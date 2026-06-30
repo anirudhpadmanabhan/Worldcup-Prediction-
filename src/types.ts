@@ -36,6 +36,7 @@ export interface UserProfile {
   uid: string;
   name: string;
   email: string;
+  mobile?: string;
   avatar: string;
   isLoggedIn: boolean;
   xp: number;

@@ -289,7 +289,7 @@ export default function LandingPage({ onStart, lang, setLang }: LandingPageProps
 
       {/* Footer Info */}
       <div className="w-full text-center py-6 text-[10px] font-mono tracking-widest text-neutral-500 z-20 flex flex-col items-center gap-2">
-        <span>© 2026 FIFA ORIGINAL PREDICTOR. ALL RIGHTS RESERVED.</span>
+        <span>© 2026 FIFA ORIGINAL PREDICTOR.</span>
         <div className="flex gap-4">
           <span className="flex items-center gap-1 text-emerald-500/80">
             <Shield className="w-3 h-3" /> SECURE EXPERIENCE

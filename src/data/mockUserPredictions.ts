@@ -16,23 +16,23 @@ export interface UserPredictionData {
 export function generateMockBracket(championId: string): Bracket {
   const r32Pairings = [
     // Left Side of Bracket (top-to-bottom of image)
-    { teams: ["ger", "par"], date: "Tue, 30 Jun, 2:00 AM" },
-    { teams: ["fra", "swe"], date: "Wed, 1 Jul, 2:30 AM" },
-    { teams: ["rsa", "can"], date: "Sun, 28 Jun, 7:30 PM" }, // South Africa vs Canada completed
-    { teams: ["ned", "mar"], date: "Tue, 30 Jun, 6:30 AM" },
-    { teams: ["por", "cro"], date: "Fri, 3 Jul, 4:30 AM" },
-    { teams: ["spa", "aut"], date: "Fri, 3 Jul, 12:30 AM" },
-    { teams: ["usa", "bos"], date: "Thu, 2 Jul, 5:30 AM" },
-    { teams: ["bel", "sen"], date: "Thu, 2 Jul, 1:30 AM" },
+    { teams: ["ger", "par"], date: "Tue, 30 Jun, 3:00 PM" },
+    { teams: ["fra", "swe"], date: "Wed, 1 Jul, 3:00 PM" },
+    { teams: ["rsa", "can"], date: "Sun, 28 Jun, 3:00 PM" }, // South Africa vs Canada completed
+    { teams: ["ned", "mar"], date: "Tue, 30 Jun, 6:00 PM" },
+    { teams: ["por", "cro"], date: "Fri, 3 Jul, 3:00 PM" },
+    { teams: ["spa", "aut"], date: "Fri, 3 Jul, 12:00 PM" },
+    { teams: ["usa", "bos"], date: "Thu, 2 Jul, 6:00 PM" },
+    { teams: ["bel", "sen"], date: "Thu, 2 Jul, 3:00 PM" },
 
     // Right Side of Bracket (top-to-bottom of image)
-    { teams: ["bra", "jpn"], date: "Mon, 29 Jun, 10:30 PM" },
-    { teams: ["civ", "nor"], date: "Tue, 30 Jun, 10:30 PM" },
-    { teams: ["mex", "ecu"], date: "Wed, 1 Jul, 6:30 AM" },
-    { teams: ["eng", "cod"], date: "Wed, 1 Jul, 9:30 PM" },
-    { teams: ["arg", "cpv"], date: "Fri, 3 Jul, 3:30 PM" },
-    { teams: ["aus", "egy"], date: "Fri, 3 Jul, 11:30 PM" },
-    { teams: ["swi", "alg"], date: "Fri, 3 Jul, 8:30 AM" },
+    { teams: ["bra", "jpn"], date: "Mon, 29 Jun, 3:00 PM" },
+    { teams: ["civ", "nor"], date: "Tue, 30 Jun, 9:00 PM" },
+    { teams: ["mex", "ecu"], date: "Wed, 1 Jul, 6:00 PM" },
+    { teams: ["eng", "cod"], date: "Wed, 1 Jul, 9:00 PM" },
+    { teams: ["arg", "cpv"], date: "Fri, 3 Jul, 6:00 PM" },
+    { teams: ["aus", "egy"], date: "Fri, 3 Jul, 9:00 PM" },
+    { teams: ["swi", "alg"], date: "Fri, 3 Jul, 1:00 PM" },
     { teams: ["col", "gha"], date: "Fri, 3 Jul, 7:00 PM" },
   ];
 

@@ -1,10 +1,13 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Award, Trophy, Zap, Coins, Globe, Users, Target, Calendar, CalendarCheck, HelpCircle, ArrowUpRight, CreditCard, Lock, DollarSign, Building, CheckCircle, RefreshCw } from "lucide-react";
-import { UserProfile, DailyPrediction, LanguageCode } from "../types";
+import { 
+  Calendar, Trophy, Coins, CheckCircle2, AlertCircle, X, 
+  Eye, ShieldAlert, Award, PlayCircle
+} from "lucide-react";
+import { UserProfile, LanguageCode, Bracket, Match, Team } from "../types";
 import { TRANSLATIONS } from "../data/translations";
+import { getTeamById, getFlagUrl } from "../data/teams";
 import { audioSynth } from "../utils/audio";
-import AdSenseBanner from "./AdSenseBanner";
 
 interface DashboardProps {
   user: UserProfile;
@@ -12,761 +15,673 @@ interface DashboardProps {
   lang: LanguageCode;
   onAdClicked?: (format: string, revenueEarned: number) => void;
   publisherId?: string;
+  bracket?: Bracket;
+  setBracket?: React.Dispatch<React.SetStateAction<Bracket>>;
+  onNavigateTab?: (tab: "bracket" | "dashboard" | "admin" | "ads") => void;
 }
 
-export default function Dashboard({ user, setUser, lang, onAdClicked, publisherId }: DashboardProps) {
-  const [activeTab, setActiveTab] = useState<"profile" | "leaderboard" | "daily" | "wallet">("profile");
-  const [leaderboardCategory, setLeaderboardCategory] = useState<"global" | "country" | "friends">("global");
+// Hardcoded map of official results/winners for completed fixtures
+const OFFICIAL_WINNERS: Record<string, string> = {
+  "r32-m0": "par", // Paraguay Wins
+  "r32-m2": "can", // Canada Wins
+  "r32-m3": "mar", // Morocco Wins
+  "r32-m8": "bra", // Brazil Wins
+};
+
+// Deterministic simulated score generator
+const getSimulatedMatchScore = (gameId: string, result: string, homeTeamCode: string, awayTeamCode: string) => {
+  let score1 = 1;
+  let score2 = 0;
+  if (gameId === "r32-m0") { score1 = 1; score2 = 2; } // Germany vs Paraguay (Paraguay Wins)
+  else if (gameId === "r32-m2") { score1 = 0; score2 = 2; } // South Africa vs Canada (Canada Wins)
+  else if (gameId === "r32-m3") { score1 = 1; score2 = 2; } // Netherlands vs Morocco (Morocco Wins)
+  else if (gameId === "r32-m8") { score1 = 2; score2 = 0; } // Brazil vs Japan (Brazil Wins)
+  else {
+    const codeSum = gameId.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    if (result.includes("Draw")) {
+      score1 = codeSum % 3;
+      score2 = score1;
+    } else if (result.includes("Wins") || result.includes("Win")) {
+      const isHomeWinner = result.includes(homeTeamCode) || result.includes("Home");
+      score1 = isHomeWinner ? (codeSum % 3) + 1 : codeSum % 2;
+      score2 = isHomeWinner ? codeSum % 2 : (codeSum % 3) + 1;
+      if (score1 === score2) {
+        if (isHomeWinner) score1 += 1;
+        else score2 += 1;
+      }
+    }
+  }
+  return { score1, score2 };
+};
+
+// Deterministic simulated stats based on match ID
+const getSimulatedStats = (gameId: string) => {
+  const hash = gameId.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  const possessionHome = 42 + (hash % 17); // between 42% and 58%
+  const possessionAway = 100 - possessionHome;
   
-  // Wallet and Payout State
-  const [bankLinked, setBankLinked] = useState(() => {
-    return localStorage.getItem("bank_account_linked") === "true";
-  });
-  const [bankDetails, setBankDetails] = useState(() => {
-    const saved = localStorage.getItem("bank_account_details");
-    return saved ? JSON.parse(saved) : { holderName: "", bankName: "", routingNumber: "", accountNumber: "" };
-  });
-  const [isLinking, setIsLinking] = useState(false);
-  const [linkError, setLinkError] = useState("");
-  const [withdrawalAmount, setWithdrawalAmount] = useState("");
-  const [withdrawalSuccess, setWithdrawalSuccess] = useState(false);
-  const [withdrawalPending, setWithdrawalPending] = useState(false);
-
-  const handleLinkBank = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!bankDetails.holderName || !bankDetails.bankName || !bankDetails.routingNumber || !bankDetails.accountNumber) {
-      setLinkError("All fields are required to verify your bank account.");
-      return;
-    }
-    setLinkError("");
-    setIsLinking(true);
-    audioSynth.playCinematicZoom();
-
-    // Simulate secure plaid / stripe verification
-    setTimeout(() => {
-      setIsLinking(false);
-      setBankLinked(true);
-      localStorage.setItem("bank_account_linked", "true");
-      localStorage.setItem("bank_account_details", JSON.stringify(bankDetails));
-      audioSynth.playSelection();
-    }, 2000);
-  };
-
-  const handleUnlinkBank = () => {
-    setBankLinked(false);
-    setBankDetails({ holderName: "", bankName: "", routingNumber: "", accountNumber: "" });
-    localStorage.removeItem("bank_account_linked");
-    localStorage.removeItem("bank_account_details");
-    audioSynth.playTick();
-  };
-
-  const handleWithdraw = () => {
-    const cashValue = user.coins * 0.1;
-    const amountNum = parseFloat(withdrawalAmount);
-    if (isNaN(amountNum) || amountNum <= 0) {
-      alert("Please enter a valid amount.");
-      return;
-    }
-    if (amountNum > cashValue) {
-      alert("Insufficient balance. Maximum you can withdraw is $" + cashValue.toFixed(2));
-      return;
-    }
-
-    setWithdrawalPending(true);
-    audioSynth.playTick();
-
-    setTimeout(() => {
-      setWithdrawalPending(false);
-      setWithdrawalSuccess(true);
-      // Deduct coins (10 coins per $1.00 withdrawn)
-      const coinsToDeduct = Math.round(amountNum * 10);
-      setUser(prev => ({
-        ...prev,
-        coins: Math.max(0, prev.coins - coinsToDeduct)
-      }));
-      setWithdrawalAmount("");
-      audioSynth.playChampionFanfare();
-
-      setTimeout(() => {
-        setWithdrawalSuccess(false);
-      }, 5000);
-    }, 2500);
-  };
+  const shotsHome = 8 + (hash % 9); // 8 to 16
+  const shotsAway = 7 + ((hash * 3) % 9); // 7 to 15
   
+  const shotsOnTargetHome = Math.max(1, Math.round(shotsHome * (0.3 + (hash % 4) * 0.1)));
+  const shotsOnTargetAway = Math.max(1, Math.round(shotsAway * (0.3 + ((hash * 2) % 4) * 0.1)));
+  
+  const foulsHome = 9 + (hash % 8); // 9 to 16
+  const foulsAway = 8 + ((hash * 5) % 8); // 8 to 15
+  
+  const passAccuracyHome = 78 + (hash % 12); // 78% to 89%
+  const passAccuracyAway = 77 + ((hash * 7) % 12); // 77% to 88%
+
+  return {
+    possessionHome,
+    possessionAway,
+    shotsHome,
+    shotsAway,
+    shotsOnTargetHome,
+    shotsOnTargetAway,
+    foulsHome,
+    foulsAway,
+    passAccuracyHome,
+    passAccuracyAway
+  };
+};
+
+// Dynamic simulated goalscorers based on team pools
+const getSimulatedGoalscorers = (teamId: string, goals: number, seed: number) => {
+  if (goals <= 0) return [];
+  const playerPools: Record<string, string[]> = {
+    usa: ["C. Pulisic", "F. Balogun", "T. Weah", "W. McKennie", "G. Reyna"],
+    mex: ["S. Giménez", "H. Lozano", "E. Álvarez", "U. Antuna", "L. Chávez"],
+    can: ["J. David", "A. Davies", "C. Larin", "T. Buchanan", "I. Koné"],
+    ecu: ["E. Valencia", "K. Rodríguez", "M. Caicedo", "P. Estupiñán", "J. Sifuentes"],
+    arg: ["L. Messi", "L. Martínez", "J. Álvarez", "A. Di María", "E. Fernández"],
+    bra: ["Vinícius Jr.", "Rodrygo", "Richarlison", "Neymar Jr.", "Bruno Guimarães"],
+    col: ["L. Díaz", "J. Rodríguez", "R. Borré", "J. Arias", "Y. Asprilla"],
+    eng: ["H. Kane", "J. Bellingham", "B. Saka", "P. Foden", "M. Rashford"],
+    fra: ["K. Mbappé", "A. Griezmann", "O. Dembélé", "M. Thuram", "K. Coman"],
+    spa: ["Á. Morata", "L. Yamal", "N. Williams", "Dani Olmo", "Pedri"],
+    ger: ["K. Havertz", "J. Musiala", "F. Wirtz", "N. Füllkrug", "L. Sané"],
+    por: ["C. Ronaldo", "B. Fernandes", "R. Leão", "João Félix", "G. Ramos"],
+    ned: ["C. Gakpo", "M. Depay", "X. Simons", "D. Malen", "W. Weghorst"],
+    bel: ["R. Lukaku", "K. De Bruyne", "L. Trossard", "J. Doku", "Y. Tielemans"],
+    cro: ["A. Kramarić", "L. Modrić", "I. Perišić", "M. Pašalić", "M. Kovačić"],
+    swi: ["B. Embolo", "X. Shaqiri", "Z. Amdouni", "G. Xhaka", "R. Freuler"],
+    mar: ["Y. En-Nesyri", "H. Ziyech", "A. Ounahi", "S. Boufal", "A. Hakimi"],
+    sen: ["S. Mané", "N. Jackson", "I. Sarr", "P. Gueye", "L. Camara"],
+    jpn: ["K. Mitoma", "A. Ueda", "T. Kubo", "R. Doan", "W. Endo"],
+    aus: ["M. Duke", "C. Goodwin", "J. Bos", "M. Boyle", "K. Baccus"],
+    rsa: ["P. Tau", "T. Zwane", "E. Makgopa", "T. Mokoena", "A. Modiba"],
+    par: ["M. Almirón", "A. Sanabria", "J. Enciso", "R. Sosa", "D. Gómez"],
+    swe: ["A. Isak", "V. Gyökeres", "D. Kulusevski", "E. Forsberg", "J. Larsson"],
+    bos: ["E. Džeko", "E. Demirović", "H. Hajradinović", "M. Stevanović", "A. Krunić"],
+    aut: ["M. Sabitzer", "C. Baumgartner", "M. Gregoritsch", "K. Laimer", "P. Wimmer"],
+    civ: ["S. Haller", "S. Adingra", "F. Kessié", "I. Sangaré", "J. Boga"],
+    nor: ["E. Haaland", "M. Ødegaard", "A. Sørloth", "O. Bobb", "S. Berge"],
+    cod: ["Y. Wissa", "T. Bongonda", "C. Bakambu", "M. Elia", "S. Moutoussamy"],
+    alg: ["R. Mahrez", "B. Bounedjah", "A. Gouiri", "H. Aouar", "I. Bennacer"],
+    gha: ["M. Kudus", "I. Williams", "J. Ayew", "A. Semenyo", "E. Nuamah"],
+    egy: ["M. Salah", "M. Mostafa", "Trezeguet", "O. Marmoush", "M. Elneny"],
+    cpv: ["Ryan Mendes", "Garry Rodrigues", "Bebé", "Jovane Cabral", "Jamiro Monteiro"]
+  };
+
+  const pool = playerPools[teamId.toLowerCase()] || ["Striker", "Midfielder", "Defender"];
+  const scorers: string[] = [];
+  for (let i = 0; i < goals; i++) {
+    const playerIndex = (seed + i * 11) % pool.length;
+    const minute = 4 + ((seed + i * 29) % 83); // random minute between 4 and 87
+    scorers.push(`${pool[playerIndex]} ${minute}'`);
+  }
+  return scorers.sort((a, b) => {
+    const minA = parseInt(a.split(" ").pop() || "0");
+    const minB = parseInt(b.split(" ").pop() || "0");
+    return minA - minB;
+  });
+};
+
+const getMatchTimestamp = (match: Match) => {
+  if (match.timestamp) return match.timestamp;
+  if (!match.date) return 0;
+  
+  // Convert Jul 4, 2026 into dynamic timestamp
+  if (match.date.includes("Jul")) {
+    const day = parseInt(match.date.replace(/[^0-9]/g, ""));
+    if (!isNaN(day)) {
+      return new Date(`2026-07-${day < 10 ? '0' + day : day}T18:00:00Z`).getTime();
+    }
+  }
+  return 0;
+};
+
+export default function Dashboard({ user, setUser, lang, bracket, onNavigateTab }: DashboardProps) {
   const t = TRANSLATIONS[lang];
 
-  // Daily Prediction Games hardcoded mock data (which the user can interactively submit)
-  const [dailyGames, setDailyGames] = useState<DailyPrediction[]>([
-    {
-      id: "dg_1",
-      homeTeam: "United States 🇺🇸",
-      awayTeam: "Mexico 🇲🇽",
-      matchDate: "June 29, 2026",
-      category: "Match Winner",
-      options: ["USA Wins", "Mexico Wins", "Draw"],
-      userPrediction: undefined,
-      xpReward: 50,
-      coinsReward: 15,
-      status: "active",
-    },
-    {
-      id: "dg_2",
-      homeTeam: "Argentina 🇦🇷",
-      awayTeam: "Brazil 🇧🇷",
-      matchDate: "June 30, 2026",
-      category: "First Goalscorer",
-      options: ["L. Messi", "Vinicius Jr.", "Lautaro Martinez", "Rodrygo"],
-      userPrediction: undefined,
-      xpReward: 80,
-      coinsReward: 30,
-      status: "active",
-    },
-    {
-      id: "dg_3",
-      homeTeam: "Germany 🇩🇪",
-      awayTeam: "Spain 🇪🇸",
-      matchDate: "July 01, 2026",
-      category: "Man of the Match",
-      options: ["Jamal Musiala", "Lamine Yamal", "Florian Wirtz", "Pedri"],
-      userPrediction: undefined,
-      xpReward: 60,
-      coinsReward: 20,
-      status: "active",
-    }
-  ]);
+  // Active chronological filter: all, completed fixtures
+  const [filter, setFilter] = useState<"all" | "completed">("all");
+  
+  // Selected settled match for the detailed Winner modal overlay
+  const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
 
-  // Mock global leaderboard records
-  const leaderboardRecords = [
-    { rank: 1, name: "Kylian_Predicts", email: "k@psg.fr", points: 2850, country: "FRA 🇫🇷", badge: "Legend Predictor" },
-    { rank: 2, name: "MessiMagic", email: "leo@miami.com", points: 2790, country: "ARG 🇦🇷", badge: "Golden Boot" },
-    { rank: 3, name: "NeymarNerve", email: "ney@hilal.sa", points: 2610, country: "BRA 🇧🇷", badge: "Prediction Master" },
-    { rank: 4, name: "Anirudh P", email: "anirudhpkndl@gmail.com", points: 2450, country: "IND 🇮🇳", badge: "Pioneer Predictor" },
-    { rank: 5, name: "SuiiiPredict", email: "cr7@alnasr.com", points: 2320, country: "POR 🇵🇹", badge: "Classic Predictor" },
-    { rank: 6, name: "MalayaliVibe", email: "kerala@gold.in", points: 2210, country: "IND 🇮🇳", badge: "Pioneer Predictor" },
-    { rank: 7, name: "GaviGrind", email: "gavi@barca.es", points: 1980, country: "ESP 🇪🇸", badge: "Classic Predictor" },
+  const currentBracket = bracket || {
+    roundOf32: [],
+    roundOf16: [],
+    quarterFinals: [],
+    semiFinals: [],
+    finals: [],
+    champion: null,
+  };
+
+  // Compile all 31 matches into a single chronological array
+  const allMatches: Match[] = [
+    ...(currentBracket.roundOf32 || []),
+    ...(currentBracket.roundOf16 || []),
+    ...(currentBracket.quarterFinals || []),
+    ...(currentBracket.semiFinals || []),
+    ...(currentBracket.finals || [])
   ];
 
-  const handlePredictDaily = (gameId: string, pick: string) => {
-    audioSynth.playSelection();
-    setDailyGames(prev =>
-      prev.map(game => {
-        if (game.id === gameId) {
-          return { ...game, userPrediction: pick, status: "locked" };
-        }
-        return game;
-      })
-    );
+  // Sort them strictly based on chronological timestamps
+  const sortedMatches = [...allMatches].sort((a, b) => {
+    return getMatchTimestamp(a) - getMatchTimestamp(b);
+  });
 
-    // Reward user with XP and coins instantly to simulate live gamification sync!
-    const targetGame = dailyGames.find(g => g.id === gameId);
-    if (targetGame) {
-      setUser(prev => {
-        const newXp = prev.xp + targetGame.xpReward;
-        const newCoins = prev.coins + targetGame.coinsReward;
-        // Basic level up math
-        const newLevel = Math.floor(newXp / 100) + 1;
-        const levelUpTriggered = newLevel > prev.level;
-        
-        if (levelUpTriggered) {
-          audioSynth.playChampionFanfare();
-        }
+  // Calculate user prediction stats on completed matches
+  const completedMatches = sortedMatches.filter(m => m.status === "completed");
+  const correctCount = completedMatches.filter(m => m.winnerId === OFFICIAL_WINNERS[m.id]).length;
+  const accuracyRate = completedMatches.length > 0 ? Math.round((correctCount / completedMatches.length) * 100) : 100;
 
-        return {
-          ...prev,
-          xp: newXp,
-          coins: newCoins,
-          level: newLevel,
-          badges: levelUpTriggered && !prev.badges.includes("Level Up Master") 
-            ? [...prev.badges, "Level Up Master"] 
-            : prev.badges
-        };
-      });
+  // Filter matches based on user's chronological toggle
+  const filteredMatches = sortedMatches.filter((match) => {
+    if (filter === "all") return true;
+    if (filter === "completed") {
+      return match.status === "completed";
+    }
+    return true;
+  });
+
+  const getTeamInfo = (teamId: string | null, placeholder: string) => {
+    if (!teamId) return { name: placeholder, emoji: "", id: null };
+    const team = getTeamById(teamId);
+    return team ? { name: team.name, emoji: team.emoji, id: team.id } : { name: placeholder, emoji: "", id: null };
+  };
+
+  const handleRowClick = (match: Match) => {
+    if (match.status === "completed") {
+      audioSynth.playSelection();
+      setSelectedMatch(match);
     }
   };
 
-  return (
-    <div className="w-full bg-neutral-950/40 border border-white/5 rounded-3xl p-4 sm:p-6 backdrop-blur-xl relative overflow-hidden shadow-2xl">
-      {/* Stadium Grid Ambient */}
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(16,185,129,0.04),transparent_50%)] pointer-events-none" />
+  // Detailed simulated specs for the selected completed match overlay
+  const selectedMatchDetails = selectedMatch ? (() => {
+    const team1 = getTeamById(selectedMatch.team1Id);
+    const team2 = getTeamById(selectedMatch.team2Id);
+    
+    const officialWinnerId = OFFICIAL_WINNERS[selectedMatch.id] || "TBD";
+    const officialResultStr = officialWinnerId === selectedMatch.team1Id 
+      ? `${team1?.name || "Team A"} Wins` 
+      : (officialWinnerId === selectedMatch.team2Id ? `${team2?.name || "Team B"} Wins` : "Draw");
 
-      {/* Dashboard Navigator */}
-      <div className="flex border-b border-white/10 mb-8 gap-1 p-1 bg-neutral-900/60 rounded-xl max-w-xl">
+    const { score1, score2 } = getSimulatedMatchScore(
+      selectedMatch.id, 
+      officialResultStr, 
+      team1?.code || "HOME", 
+      team2?.code || "AWAY"
+    );
+
+    const stats = getSimulatedStats(selectedMatch.id);
+    const seedValue = selectedMatch.id.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    
+    const homeScorers = team1 ? getSimulatedGoalscorers(team1.id, score1, seedValue) : [];
+    const awayScorers = team2 ? getSimulatedGoalscorers(team2.id, score2, seedValue + 42) : [];
+
+    // Map winner name for presentation
+    const winnerTeam = getTeamById(officialWinnerId);
+
+    return {
+      team1,
+      team2,
+      score1,
+      score2,
+      stats,
+      homeScorers,
+      awayScorers,
+      officialWinnerId,
+      officialResultStr,
+      winnerTeamName: winnerTeam ? `${winnerTeam.name} ${winnerTeam.emoji}` : "Paraguay"
+    };
+  })() : null;
+
+  return (
+    <div id="daily-prediction-dashboard" className="w-full bg-neutral-950/40 border border-white/5 rounded-3xl p-4 sm:p-6 backdrop-blur-xl relative overflow-visible shadow-2xl">
+      {/* Stadium Grid Ambient */}
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(16,185,129,0.04),transparent_50%)] pointer-events-none rounded-3xl" />
+
+      {/* Header Info Row */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 relative z-10">
+        {onNavigateTab && (
+          <button
+            id="back-bracket-btn"
+            onClick={() => {
+              onNavigateTab("bracket");
+              audioSynth.playSelection();
+            }}
+            className="flex items-center gap-2 bg-yellow-500 hover:bg-yellow-400 text-black text-xs font-bold px-4 py-2.5 rounded-xl transition cursor-pointer shadow-lg active:scale-95 uppercase tracking-wider shrink-0"
+          >
+            ← OPEN BRACKET STAGE
+          </button>
+        )}
+        
+        <div id="stats-ribbon" className="bg-neutral-900 border border-white/5 rounded-xl px-4 py-2 flex items-center gap-4 shadow-md ml-auto">
+          <div className="flex items-center gap-1.5">
+            <Trophy className="w-3.5 h-3.5 text-yellow-500" />
+            <span className="text-xs font-bold text-white">{user.xp} XP</span>
+          </div>
+          <div className="flex items-center gap-1.5 border-l border-white/10 pl-4">
+            <Coins className="w-3.5 h-3.5 text-yellow-500" />
+            <span className="text-xs font-bold text-yellow-400">{user.coins} Coins</span>
+          </div>
+          <div className="flex items-center gap-1.5 border-l border-white/10 pl-4 font-mono text-[10px] text-neutral-400">
+            <span>Streak: {user.dailyStreak} days</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Dynamic Accuracy Banner */}
+      <div id="accuracy-banner" className="mb-6 bg-gradient-to-r from-emerald-500/10 via-neutral-900/10 to-transparent border border-emerald-500/20 p-4 rounded-2xl relative overflow-hidden backdrop-blur-md z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div className="flex gap-3">
+          <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center shrink-0">
+            <Trophy className="w-5 h-5 text-emerald-400" />
+          </div>
+          <div>
+            <h4 className="text-sm font-black text-white uppercase tracking-wide">🏆 DAILY PREDICTIONS ARENA</h4>
+            <p className="text-xs text-neutral-400 mt-0.5 leading-relaxed">
+              Your predictions are mapped directly from your tournament bracket. Click on any completed match row below to view official scores, goalscorers, and detailed stats!
+            </p>
+          </div>
+        </div>
+        
+        <div className="bg-neutral-950/60 border border-white/5 p-2 px-4 rounded-xl flex items-center gap-3 shrink-0 self-stretch md:self-auto justify-between">
+          <div className="text-right">
+            <span className="text-[9px] text-neutral-500 font-mono uppercase block">ARENA ACCURACY</span>
+            <span className="text-sm font-black text-emerald-400 block">{accuracyRate}% ACCURACY</span>
+          </div>
+          <div className="w-8 h-8 rounded-full border-2 border-emerald-500 flex items-center justify-center bg-emerald-500/10 shrink-0">
+            <span className="text-[10px] font-black text-white">{accuracyRate}%</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Simplified Date Centric Filter Tabs */}
+      <div id="round-filter-pills" className="flex flex-wrap gap-1.5 mb-5 relative z-10">
         <button
-          onClick={() => { setActiveTab("profile"); audioSynth.playTick(); }}
-          className={`flex-1 py-2 rounded-lg text-[10px] md:text-xs font-bold tracking-wider uppercase transition cursor-pointer ${
-            activeTab === "profile" ? "bg-yellow-500 text-black shadow-md" : "text-neutral-400 hover:text-white"
+          onClick={() => { setFilter("all"); audioSynth.playSelection(); }}
+          className={`px-3 py-1.5 rounded-xl text-xs font-bold font-mono uppercase tracking-wider transition cursor-pointer ${
+            filter === "all" ? "bg-white text-black font-black" : "bg-neutral-900/80 text-neutral-400 hover:text-white border border-white/5"
           }`}
         >
-          {t.myPredictions}
+          All Dates ({sortedMatches.length})
         </button>
         <button
-          onClick={() => { setActiveTab("leaderboard"); audioSynth.playTick(); }}
-          className={`flex-1 py-2 rounded-lg text-[10px] md:text-xs font-bold tracking-wider uppercase transition cursor-pointer ${
-            activeTab === "leaderboard" ? "bg-yellow-500 text-black shadow-md" : "text-neutral-400 hover:text-white"
+          onClick={() => { setFilter("completed"); audioSynth.playSelection(); }}
+          className={`px-3 py-1.5 rounded-xl text-xs font-bold font-mono uppercase tracking-wider transition cursor-pointer border flex items-center gap-1.5 ${
+            filter === "completed" 
+              ? "bg-emerald-500 text-neutral-950 border-emerald-400 font-black" 
+              : "bg-emerald-950/20 text-emerald-400 border-emerald-500/20 hover:bg-emerald-950/40"
           }`}
         >
-          {t.leaderboard}
-        </button>
-        <button
-          onClick={() => { setActiveTab("daily"); audioSynth.playTick(); }}
-          className={`flex-1 py-2 rounded-lg text-[10px] md:text-xs font-bold tracking-wider uppercase transition cursor-pointer ${
-            activeTab === "daily" ? "bg-yellow-500 text-black shadow-md" : "text-neutral-400 hover:text-white"
-          }`}
-        >
-          {t.dailyGameTitle}
-        </button>
-        <button
-          onClick={() => { setActiveTab("wallet"); audioSynth.playTick(); }}
-          className={`flex-1 py-2 rounded-lg text-[10px] md:text-xs font-bold tracking-wider uppercase transition cursor-pointer ${
-            activeTab === "wallet" ? "bg-yellow-500 text-black shadow-md" : "text-neutral-400 hover:text-white"
-          }`}
-        >
-          💳 Wallet & Payout
+          Completed Results ({completedMatches.length})
         </button>
       </div>
 
-      {/* ================= VIEW: PROFILE / ACHIEVEMENTS ================= */}
-      {activeTab === "profile" && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          
-          {/* User Profile Column (Profile + Banner Ad) */}
-          <div className="lg:col-span-1 flex flex-col gap-6">
-            <div className="w-full bg-neutral-900/40 border border-white/10 rounded-2xl p-6 flex flex-col items-center text-center relative overflow-hidden backdrop-blur-md">
-              <div className="absolute top-4 right-4 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-full px-3 py-1 text-[9px] font-mono flex items-center gap-1">
-                <Zap className="w-3 h-3 text-emerald-400" /> ONLINE
-              </div>
-
-              <div className="w-20 h-20 rounded-full bg-gradient-to-tr from-yellow-500 to-amber-600 border-2 border-yellow-400/50 flex items-center justify-center text-4xl shadow-[0_0_20px_rgba(234,179,8,0.2)] mb-4">
-                {user.avatar}
-              </div>
-
-              <h3 className="text-xl font-black text-white">{user.name}</h3>
-              <span className="text-xs text-neutral-400 font-mono mb-6">{user.email}</span>
-
-              {/* Level Metric */}
-              <div className="w-full space-y-2 mb-6">
-                <div className="flex justify-between text-xs font-mono text-neutral-400">
-                  <span>{t.level} {user.level}</span>
-                  <span>{user.xp % 100} / 100 XP</span>
-                </div>
-                <div className="w-full h-2.5 bg-neutral-950 rounded-full overflow-hidden border border-white/5 relative">
-                  <motion.div
-                    className="h-full bg-gradient-to-r from-emerald-500 to-yellow-400 rounded-full"
-                    initial={{ width: 0 }}
-                    animate={{ width: `${user.xp % 100}%` }}
-                    transition={{ duration: 0.8, ease: "easeOut" }}
-                  />
-                </div>
-              </div>
-
-              {/* Coin & Streak details */}
-              <div className="grid grid-cols-2 gap-4 w-full border-t border-white/5 pt-6 text-left">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-lg bg-yellow-500/10 border border-yellow-500/20 flex items-center justify-center">
-                    <Coins className="w-4 h-4 text-yellow-400" />
-                  </div>
-                  <div>
-                    <span className="text-[10px] font-mono text-neutral-400 uppercase tracking-wider">{t.coins}</span>
-                    <p className="text-sm font-black text-white">{user.coins}</p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-                    <Zap className="w-4 h-4 text-emerald-400" />
-                  </div>
-                  <div>
-                    <span className="text-[10px] font-mono text-neutral-400 uppercase tracking-wider">{t.dailyStreak}</span>
-                    <p className="text-sm font-black text-white">{user.dailyStreak} Days</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Dynamic football-focused Rectangle Ad */}
-            <AdSenseBanner format="rectangle" publisherId={publisherId} onAdClicked={onAdClicked} />
-          </div>
-
-          {/* Badges and Trophies Showcase */}
-          <div className="lg:col-span-2 space-y-6">
-            <h4 className="text-sm font-mono tracking-widest text-neutral-400 uppercase">
-              {t.badges} ({user.badges.length})
-            </h4>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="bg-neutral-900/30 border border-white/5 p-4 rounded-xl flex items-center gap-4 hover:border-yellow-500/30 transition-all duration-300">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-yellow-500/10 to-amber-500/20 border border-yellow-500/30 flex items-center justify-center">
-                  <Trophy className="w-6 h-6 text-yellow-400" />
-                </div>
-                <div>
-                  <span className="text-xs font-bold text-white block">Prediction Master</span>
-                  <span className="text-[10px] text-neutral-400 block font-mono">Completed 100% bracket prediction</span>
-                </div>
-              </div>
-
-              <div className="bg-neutral-900/30 border border-white/5 p-4 rounded-xl flex items-center gap-4 hover:border-emerald-500/30 transition-all duration-300">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-emerald-500/10 to-emerald-500/20 border border-emerald-500/30 flex items-center justify-center">
-                  <Award className="w-6 h-6 text-emerald-400" />
-                </div>
-                <div>
-                  <span className="text-xs font-bold text-white block">Golden Boot</span>
-                  <span className="text-[10px] text-neutral-400 block font-mono">Picked correct group-stage winner</span>
-                </div>
-              </div>
-
-              <div className="bg-neutral-900/30 border border-white/5 p-4 rounded-xl flex items-center gap-4 hover:border-yellow-500/30 transition-all duration-300">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-yellow-500/10 to-amber-500/20 border border-yellow-500/30 flex items-center justify-center">
-                  <Trophy className="w-6 h-6 text-yellow-500" />
-                </div>
-                <div>
-                  <span className="text-xs font-bold text-white block">Legend Predictor</span>
-                  <span className="text-[10px] text-neutral-400 block font-mono">Achieved Rank in top 100 globally</span>
-                </div>
-              </div>
-
-              {/* Dynamic Badge earned by active leveling up */}
-              <div className={`p-4 rounded-xl flex items-center gap-4 border transition-all duration-300 ${
-                user.badges.includes("Level Up Master")
-                  ? "bg-neutral-900/30 border-yellow-500/30 hover:border-yellow-500"
-                  : "bg-neutral-950/10 border-white/5 opacity-50"
-              }`}>
-                <div className="w-12 h-12 rounded-xl bg-neutral-900 border border-white/15 flex items-center justify-center">
-                  <Zap className={`w-6 h-6 ${user.badges.includes("Level Up Master") ? "text-yellow-400 animate-pulse" : "text-neutral-600"}`} />
-                </div>
-                <div>
-                  <span className="text-xs font-bold text-white block">Level Up Master</span>
-                  <span className="text-[10px] text-neutral-400 block font-mono">
-                    {user.badges.includes("Level Up Master") ? "Earned via daily games!" : "Earn next level to unlock"}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* accuracy analysis */}
-            <div className="bg-neutral-900/20 border border-white/5 rounded-2xl p-6">
-              <span className="text-xs font-mono uppercase text-neutral-400 block mb-4">{t.correctPredictions}</span>
-              <div className="flex items-center gap-6">
-                <div className="w-24 h-24 rounded-full border-4 border-dashed border-emerald-500 flex flex-col items-center justify-center shadow-lg shrink-0">
-                  <span className="text-2xl font-black text-white">88%</span>
-                  <span className="text-[8px] font-mono text-neutral-400 uppercase">PRECISION</span>
-                </div>
-                <div className="space-y-2 text-xs text-neutral-400">
-                  <p>• Highly optimized predictions comparing live stats from prior World Cups.</p>
-                  <p>• Multi-criteria simulated algorithms based on authentic team rankings.</p>
-                </div>
-              </div>
-            </div>
-
-          </div>
+      {/* Dynamic Accurate Arena Grid */}
+      <div id="arena-table-wrapper" className="relative z-10 bg-neutral-900/40 border border-white/10 rounded-2xl overflow-hidden">
+        {/* Table Header */}
+        <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-4 bg-neutral-950 border-b border-white/5 text-[10px] font-mono text-neutral-400 uppercase tracking-wider">
+          <div className="col-span-2">Date</div>
+          <div className="col-span-4">Match Up</div>
+          <div className="col-span-3">My Prediction</div>
+          <div className="col-span-3 text-right">Official Result</div>
         </div>
-      )}
 
-      {/* ================= VIEW: GLOBAL LEADERBOARD ================= */}
-      {activeTab === "leaderboard" && (
-        <div className="space-y-6">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 border-b border-white/10 pb-4">
-            <div>
-              <h3 className="text-xl font-black text-white uppercase">{t.leaderboard}</h3>
-              <p className="text-xs text-neutral-400 font-mono">Global live ranks updated in real-time</p>
+        {/* Prediction Rows */}
+        <div className="divide-y divide-white/5">
+          {filteredMatches.length === 0 ? (
+            <div className="text-center py-10 text-neutral-500 font-mono text-xs">
+              No matches found for the selected filter.
             </div>
+          ) : (
+            filteredMatches.map((match) => {
+              const team1 = getTeamInfo(match.team1Id, match.team1Placeholder || "TBD");
+              const team2 = getTeamInfo(match.team2Id, match.team2Placeholder || "TBD");
+              
+              const userPredictedWinner = match.winnerId ? getTeamById(match.winnerId) : null;
+              const officialWinnerId = OFFICIAL_WINNERS[match.id];
+              const officialWinnerTeam = officialWinnerId ? getTeamById(officialWinnerId) : null;
+              
+              const isPredictionCorrect = match.status === "completed" && match.winnerId === officialWinnerId;
 
-            {/* Sub-Filters: Global vs Friends */}
-            <div className="flex gap-2 p-1 bg-neutral-900 rounded-lg">
-              <button
-                onClick={() => { setLeaderboardCategory("global"); audioSynth.playTick(); }}
-                className={`px-4 py-1.5 rounded-md text-xs font-mono uppercase transition cursor-pointer ${
-                  leaderboardCategory === "global" ? "bg-yellow-500 text-black font-bold" : "text-neutral-400 hover:text-white"
-                }`}
-              >
-                Global
-              </button>
-              <button
-                onClick={() => { setLeaderboardCategory("friends"); audioSynth.playTick(); }}
-                className={`px-4 py-1.5 rounded-md text-xs font-mono uppercase transition cursor-pointer ${
-                  leaderboardCategory === "friends" ? "bg-yellow-500 text-black font-bold" : "text-neutral-400 hover:text-white"
-                }`}
-              >
-                Friends
-              </button>
-            </div>
-          </div>
+              return (
+                <div
+                  key={match.id}
+                  onClick={() => handleRowClick(match)}
+                  className={`grid grid-cols-1 md:grid-cols-12 gap-3 px-6 py-4 items-center transition-all text-left ${
+                    match.status === "completed" 
+                      ? "cursor-pointer hover:bg-white/5 bg-neutral-900/25 border-l-2 border-emerald-500" 
+                      : "hover:bg-white/[0.01]"
+                  }`}
+                >
+                  {/* Date Column */}
+                  <div className="col-span-1 md:col-span-2 flex items-center gap-2 text-xs text-neutral-400 font-mono">
+                    <Calendar className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
+                    <span>{match.date}</span>
+                  </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-neutral-300">
-              <thead className="bg-neutral-950 text-neutral-400 font-mono uppercase text-[10px]">
-                <tr>
-                  <th className="px-6 py-4 rounded-l-xl">{t.rank}</th>
-                  <th className="px-6 py-4">{t.username}</th>
-                  <th className="px-6 py-4">Country</th>
-                  <th className="px-6 py-4">Badge</th>
-                  <th className="px-6 py-4 rounded-r-xl text-right">{t.points}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5">
-                {leaderboardRecords
-                  .filter(rec => leaderboardCategory === "global" || rec.name.includes("Predict") || rec.name.includes("Anirudh"))
-                  .map((rec, index) => (
-                    <tr
-                      key={rec.rank}
-                      className={`hover:bg-neutral-900/40 transition-colors duration-150 ${
-                        rec.name === "Anirudh P" ? "bg-yellow-500/5 font-bold" : ""
-                      }`}
-                    >
-                      <td className="px-6 py-4 font-mono">
-                        {rec.rank === 1 ? (
-                          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-yellow-500 text-black font-black text-[10px] shadow-[0_0_10px_rgba(234,179,8,0.4)] animate-bounce">
-                            🥇
+                  {/* Match Column */}
+                  <div className="col-span-1 md:col-span-4 text-sm font-bold text-white flex flex-row items-center gap-2 flex-wrap">
+                    <span className="flex items-center gap-1">
+                      {team1.id && <img src={getFlagUrl(team1.id)} alt="" className="w-5 h-3.5 rounded object-cover inline-block mr-1" />}
+                      <span>{team1.name}</span>
+                    </span>
+                    <span className="text-xs font-normal text-neutral-500 italic">vs</span>
+                    <span className="flex items-center gap-1">
+                      {team2.id && <img src={getFlagUrl(team2.id)} alt="" className="w-5 h-3.5 rounded object-cover inline-block mr-1" />}
+                      <span>{team2.name}</span>
+                    </span>
+                  </div>
+
+                  {/* Prediction Column */}
+                  <div className="col-span-1 md:col-span-3">
+                    {userPredictedWinner ? (
+                      <div className="inline-flex flex-col">
+                        <span className="text-[9px] font-mono text-neutral-500 uppercase block mb-0.5">My Pick</span>
+                        <div className="flex items-center gap-1.5">
+                          {userPredictedWinner.id && <img src={getFlagUrl(userPredictedWinner.id)} alt="" className="w-4 h-3 rounded object-cover" />}
+                          <span className="text-xs font-bold text-yellow-400">
+                            {userPredictedWinner.name} Wins
                           </span>
-                        ) : rec.rank === 2 ? (
-                          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-slate-300 text-black font-black text-[10px]">
-                            🥈
+                        </div>
+                      </div>
+                    ) : match.status === "completed" ? (
+                      <span className="text-xs text-neutral-500 italic font-mono">No prediction made</span>
+                    ) : (
+                      onNavigateTab && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onNavigateTab("bracket");
+                            audioSynth.playSelection();
+                          }}
+                          className="px-2.5 py-1.5 bg-neutral-950 hover:bg-yellow-500 hover:text-black border border-white/5 rounded-lg text-[10px] font-bold text-neutral-300 transition-all cursor-pointer active:scale-95 uppercase font-mono tracking-wider"
+                        >
+                          👈 Make Pick
+                        </button>
+                      )
+                    )}
+                  </div>
+
+                  {/* Result Column */}
+                  <div className="col-span-1 md:col-span-3 md:text-right flex items-center justify-between md:justify-end gap-2">
+                    {match.status === "completed" && officialWinnerTeam ? (
+                      <div className="flex items-center gap-2">
+                        <div className="text-left md:text-right">
+                          <span className="text-[9px] font-mono text-neutral-500 uppercase block mb-0.5">Official Winner</span>
+                          <span className="text-xs font-black text-emerald-400 flex items-center gap-1">
+                            <span>{officialWinnerTeam.name}</span>
                           </span>
-                        ) : rec.rank === 3 ? (
-                          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-amber-700 text-black font-black text-[10px]">
-                            🥉
-                          </span>
-                        ) : (
-                          `#${rec.rank}`
-                        )}
-                      </td>
-                      <td className="px-6 py-4 font-bold text-white flex items-center gap-2">
-                        <span>{rec.name}</span>
-                        {rec.name === "Anirudh P" && (
-                          <span className="bg-yellow-500 text-black text-[8px] font-mono px-1.5 py-0.5 rounded uppercase">
-                            YOU
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 font-mono">{rec.country}</td>
-                      <td className="px-6 py-4">
-                        <span className="bg-neutral-900 border border-white/5 text-neutral-400 text-[10px] px-2 py-1 rounded-md">
-                          {rec.badge}
+                        </div>
+                        <span className={`text-[10px] font-mono font-black uppercase px-2 py-0.5 rounded ${
+                          isPredictionCorrect ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-red-500/10 text-red-400 border border-red-500/20"
+                        }`}>
+                          {isPredictionCorrect ? "Correct" : "Incorrect"}
                         </span>
-                      </td>
-                      <td className="px-6 py-4 text-right font-mono font-bold text-yellow-400">
-                        {rec.points} pts
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          </div>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-neutral-500 font-mono italic">Scheduled (TBD)</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
         </div>
-      )}
+      </div>
 
-      {/* ================= VIEW: DAILY MATCH GAMES ================= */}
-      {activeTab === "daily" && (
-        <div className="space-y-6">
-          <div>
-            <h3 className="text-xl font-black text-white uppercase">{t.dailyGameTitle}</h3>
-            <p className="text-xs text-neutral-400 font-mono">{t.predictAndWin}</p>
-          </div>
+      {/* Interactive Completed Match Ceremony Overlay (The "Winner Details Page") */}
+      <AnimatePresence>
+        {selectedMatch && selectedMatchDetails && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto"
+          >
+            <motion.div
+              initial={{ scale: 0.92, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.92, opacity: 0, y: 15 }}
+              className="relative max-w-2xl w-full bg-gradient-to-b from-neutral-900 via-neutral-950 to-black border border-white/10 rounded-3xl p-6 md:p-8 shadow-[0_0_50px_rgba(16,185,129,0.15)] overflow-hidden my-8"
+            >
+              {/* Decorative Spotlight */}
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-72 h-40 bg-emerald-500/10 rounded-full blur-[80px] pointer-events-none" />
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {dailyGames.map((game) => (
-              <div
-                key={game.id}
-                className="bg-neutral-900/40 border border-white/10 rounded-2xl p-5 relative overflow-hidden backdrop-blur-md flex flex-col justify-between"
+              {/* Close Button */}
+              <button
+                onClick={() => setSelectedMatch(null)}
+                className="absolute top-4 right-4 p-2.5 rounded-full bg-neutral-900 hover:bg-neutral-800 border border-white/10 text-neutral-400 hover:text-white transition duration-200 cursor-pointer"
               >
-                {/* Status Indicator */}
-                <span className="absolute top-4 right-4 text-[9px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 uppercase tracking-widest">
-                  {game.status}
+                <X className="w-4 h-4" />
+              </button>
+
+              {/* Header Info */}
+              <div className="text-center mb-6">
+                <span className="px-3 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full text-[10px] font-mono font-black uppercase tracking-widest">
+                  🏆 TOURNAMENT MATCH CEREMONY
+                </span>
+                <p className="text-xs text-neutral-400 mt-2 font-mono">
+                  {selectedMatch.date} • Official Result Certified
+                </p>
+              </div>
+
+              {/* Scoreboard block */}
+              <div className="bg-neutral-950/80 border border-white/5 rounded-2xl p-6 mb-6 flex items-center justify-between gap-4 relative">
+                {/* Home Team */}
+                <div className="flex-1 flex flex-col items-center text-center">
+                  <div className="w-16 h-16 rounded-2xl overflow-hidden border border-white/10 mb-2 relative bg-neutral-900 shadow-md">
+                    {selectedMatchDetails.team1 ? (
+                      <img 
+                        src={getFlagUrl(selectedMatchDetails.team1.id)} 
+                        alt={selectedMatchDetails.team1.name} 
+                        className="w-full h-full object-cover"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center font-bold text-neutral-400 font-mono">TBD</div>
+                    )}
+                  </div>
+                  <span className="text-xs font-mono text-neutral-500 uppercase">Home</span>
+                  <span className="text-sm font-black text-white leading-tight">{selectedMatchDetails.team1?.name}</span>
+                </div>
+
+                {/* Score */}
+                <div className="flex flex-col items-center">
+                  <div className="bg-neutral-900 border border-white/10 rounded-xl px-4 py-2 flex items-center gap-4 shadow-inner">
+                    <span className="text-3xl font-black text-white font-mono">{selectedMatchDetails.score1}</span>
+                    <span className="text-neutral-600 font-mono text-lg">:</span>
+                    <span className="text-3xl font-black text-white font-mono">{selectedMatchDetails.score2}</span>
+                  </div>
+                  <span className="text-[10px] font-mono text-neutral-500 mt-1.5 uppercase font-bold tracking-wider">Full Time</span>
+                </div>
+
+                {/* Away Team */}
+                <div className="flex-1 flex flex-col items-center text-center">
+                  <div className="w-16 h-16 rounded-2xl overflow-hidden border border-white/10 mb-2 relative bg-neutral-900 shadow-md">
+                    {selectedMatchDetails.team2 ? (
+                      <img 
+                        src={getFlagUrl(selectedMatchDetails.team2.id)} 
+                        alt={selectedMatchDetails.team2.name} 
+                        className="w-full h-full object-cover"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center font-bold text-neutral-400 font-mono">TBD</div>
+                    )}
+                  </div>
+                  <span className="text-xs font-mono text-neutral-500 uppercase">Away</span>
+                  <span className="text-sm font-black text-white leading-tight">{selectedMatchDetails.team2?.name}</span>
+                </div>
+              </div>
+
+              {/* Goal Scorers list */}
+              <div className="grid grid-cols-2 gap-4 px-4 mb-6 text-xs text-neutral-400 font-mono">
+                {/* Home scorers */}
+                <div className="text-left space-y-0.5 border-r border-white/5 pr-4">
+                  {selectedMatchDetails.homeScorers.map((scorer, idx) => (
+                    <div key={idx} className="flex items-center gap-1">
+                      <span>⚽</span> <span>{scorer}</span>
+                    </div>
+                  ))}
+                  {selectedMatchDetails.homeScorers.length === 0 && <span className="text-neutral-600">No goals scored</span>}
+                </div>
+                {/* Away scorers */}
+                <div className="text-right space-y-0.5 pl-4">
+                  {selectedMatchDetails.awayScorers.map((scorer, idx) => (
+                    <div key={idx} className="flex items-center justify-end gap-1">
+                      <span>{scorer}</span> <span>⚽</span>
+                    </div>
+                  ))}
+                  {selectedMatchDetails.awayScorers.length === 0 && <span className="text-neutral-600">No goals scored</span>}
+                </div>
+              </div>
+
+              {/* User prediction verification card */}
+              <div className="mb-6 p-4 rounded-2xl backdrop-blur-md relative overflow-hidden">
+                {selectedMatch.winnerId === selectedMatchDetails.officialWinnerId ? (
+                  <div className="bg-emerald-950/40 border border-emerald-500/30 rounded-xl p-4 text-center space-y-2 relative shadow-lg">
+                    <div className="absolute inset-0 bg-emerald-500/5 pointer-events-none rounded-xl" />
+                    <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto animate-bounce" />
+                    <h4 className="text-sm font-black text-white uppercase tracking-wider">🎉 Prediction Certified Correct!</h4>
+                    <p className="text-xs text-emerald-300">
+                      You correctly predicted that <strong className="text-white">"{selectedMatchDetails.winnerTeamName}"</strong> would advance!
+                    </p>
+                    <div className="inline-flex items-center gap-3 bg-neutral-900 px-4 py-1.5 rounded-full border border-white/10 text-xs font-bold font-mono text-yellow-400 mt-2">
+                      <span>+50 XP</span>
+                      <span className="border-l border-white/20 h-3" />
+                      <span>+15 Coins (Bonus)</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-neutral-900 border border-white/10 rounded-xl p-4 text-center space-y-2 shadow-lg">
+                    <AlertCircle className="w-10 h-10 text-amber-500 mx-auto" />
+                    <h4 className="text-sm font-black text-white uppercase tracking-wider">Consolation Reward Credited</h4>
+                    <p className="text-xs text-neutral-300">
+                      Your selection: <strong className="text-white">"{selectedMatch.winnerId ? getTeamById(selectedMatch.winnerId)?.name : "No Prediction"}"</strong>. Official Winner: <strong className="text-emerald-400">"{selectedMatchDetails.winnerTeamName}"</strong>.
+                    </p>
+                    <div className="inline-flex items-center gap-3 bg-neutral-950 px-4 py-1.5 rounded-full border border-white/5 text-xs font-bold font-mono text-yellow-500 mt-2">
+                      <span>+25 XP</span>
+                      <span className="border-l border-white/20 h-3" />
+                      <span>+5 Coins (Consolation)</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Detailed Match Statistics Compare section */}
+              <div className="bg-neutral-900/50 border border-white/5 rounded-2xl p-5 space-y-4">
+                <span className="text-[10px] font-mono uppercase tracking-widest text-neutral-500 font-bold block border-b border-white/5 pb-2">
+                  📊 PREMIUM MATCH STATISTICS
                 </span>
 
-                <div>
-                  <div className="flex items-center gap-2 text-xs font-mono text-neutral-400 mb-2">
-                    <Calendar className="w-3.5 h-3.5" />
-                    <span>{game.matchDate}</span>
+                {/* Stat Line: Possession */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs font-mono text-neutral-300">
+                    <span>{selectedMatchDetails.stats.possessionHome}%</span>
+                    <span className="text-neutral-500 font-bold">Possession</span>
+                    <span>{selectedMatchDetails.stats.possessionAway}%</span>
                   </div>
-
-                  <span className="bg-yellow-500/10 border border-yellow-500/20 text-yellow-400 font-bold text-[9px] px-2 py-1 rounded-full font-mono uppercase inline-block mb-4">
-                    {game.category}
-                  </span>
-
-                  <h4 className="text-base font-bold text-white mb-6 flex flex-col gap-1">
-                    <span>{game.homeTeam}</span>
-                    <span className="text-xs font-normal text-neutral-500 italic">vs</span>
-                    <span>{game.awayTeam}</span>
-                  </h4>
-                </div>
-
-                {/* Predict Options Button Stack */}
-                <div className="space-y-2 mt-auto">
-                  {game.userPrediction ? (
-                    <div className="bg-emerald-950/25 border border-emerald-500/30 rounded-xl p-3 text-center">
-                      <span className="text-[10px] font-mono text-emerald-400 block uppercase">PREDICTED SELECTION</span>
-                      <p className="text-sm font-extrabold text-white mt-1">{game.userPrediction}</p>
-                    </div>
-                  ) : (
-                    game.options.map(opt => (
-                      <button
-                        key={opt}
-                        onClick={() => handlePredictDaily(game.id, opt)}
-                        className="w-full py-2.5 bg-neutral-950 border border-white/5 rounded-xl text-xs text-neutral-300 hover:text-white hover:border-yellow-500/50 transition cursor-pointer text-left px-4 flex justify-between items-center"
-                      >
-                        <span>{opt}</span>
-                        <ArrowUpRight className="w-3.5 h-3.5 text-neutral-500" />
-                      </button>
-                    ))
-                  )}
-
-                  <div className="flex items-center justify-between text-[10px] font-mono text-neutral-500 mt-3 pt-3 border-t border-white/5">
-                    <span>Reward: +{game.xpReward} XP</span>
-                    <span>+{game.coinsReward} Coins</span>
+                  <div className="w-full h-2 bg-neutral-800 rounded-full flex overflow-hidden">
+                    <div 
+                      className="bg-emerald-500 h-full transition-all duration-1000" 
+                      style={{ width: `${selectedMatchDetails.stats.possessionHome}%` }} 
+                    />
+                    <div 
+                      className="bg-neutral-700 h-full transition-all duration-1000" 
+                      style={{ width: `${selectedMatchDetails.stats.possessionAway}%` }} 
+                    />
                   </div>
                 </div>
 
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ================= VIEW: WALLET & BANK PAYOUT ================= */}
-      {activeTab === "wallet" && (
-        <div className="space-y-6">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-white/10 pb-4">
-            <div>
-              <h3 className="text-xl font-black text-white uppercase flex items-center gap-2">
-                <CreditCard className="w-5 h-5 text-yellow-400" />
-                Prediction Wallet & Payout Center
-              </h3>
-              <p className="text-xs text-neutral-400 font-mono">Secure your earnings and manage bank account withdrawals</p>
-            </div>
-            <div className="flex items-center gap-1.5 text-[10px] bg-neutral-900 border border-white/5 rounded-lg px-3 py-1 text-neutral-400 font-mono">
-              <Lock className="w-3.5 h-3.5 text-emerald-400" />
-              <span>SSL SECURED AES-256</span>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Column 1: Balance & Statistics */}
-            <div className="space-y-6 lg:col-span-1">
-              <div className="bg-neutral-900/60 border border-white/10 rounded-2xl p-6 relative overflow-hidden backdrop-blur-md">
-                <div className="absolute top-[-50px] right-[-50px] w-40 h-40 bg-emerald-500/5 rounded-full blur-3xl" />
-                
-                <span className="text-[10px] font-mono text-neutral-400 uppercase tracking-wider block mb-1">TOTAL CONVERTED BALANCE</span>
-                <div className="flex items-baseline gap-2 mb-4">
-                  <span className="text-3xl font-black text-white font-mono">${(user.coins * 0.1).toFixed(2)}</span>
-                  <span className="text-xs text-emerald-400 font-mono">USD</span>
-                </div>
-
-                <div className="space-y-3 pt-4 border-t border-white/5">
-                  <div className="flex justify-between text-xs font-mono">
-                    <span className="text-neutral-400">Prediction Coins</span>
-                    <span className="text-white font-bold">{user.coins} Coins</span>
+                {/* Stat Line: Shots (On Target) */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs font-mono text-neutral-300">
+                    <span>{selectedMatchDetails.stats.shotsHome} ({selectedMatchDetails.stats.shotsOnTargetHome})</span>
+                    <span className="text-neutral-500 font-bold">Shots (On Target)</span>
+                    <span>{selectedMatchDetails.stats.shotsAway} ({selectedMatchDetails.stats.shotsOnTargetAway})</span>
                   </div>
-                  <div className="flex justify-between text-xs font-mono">
-                    <span className="text-neutral-400">Conversion Rate</span>
-                    <span className="text-yellow-400 font-bold">10 Coins = $1.00 USD</span>
-                  </div>
-                  <div className="flex justify-between text-xs font-mono">
-                    <span className="text-neutral-400">Pending Approvals</span>
-                    <span className="text-neutral-400 font-bold">$12.50 USD</span>
+                  <div className="w-full h-2 bg-neutral-800 rounded-full flex overflow-hidden">
+                    <div 
+                      className="bg-emerald-400 h-full transition-all duration-1000" 
+                      style={{ width: `${(selectedMatchDetails.stats.shotsHome / (selectedMatchDetails.stats.shotsHome + selectedMatchDetails.stats.shotsAway)) * 100}%` }} 
+                    />
+                    <div 
+                      className="bg-neutral-600 h-full transition-all duration-1000" 
+                      style={{ width: `${(selectedMatchDetails.stats.shotsAway / (selectedMatchDetails.stats.shotsHome + selectedMatchDetails.stats.shotsAway)) * 100}%` }} 
+                    />
                   </div>
                 </div>
 
-                <div className="mt-6 bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-3 flex gap-2 items-center">
-                  <Coins className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <p className="text-[10px] text-neutral-400 font-mono">
-                    Withdrawal requests are typically processed within 2-3 business days once verified.
-                  </p>
+                {/* Stat Line: Pass Accuracy */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs font-mono text-neutral-300">
+                    <span>{selectedMatchDetails.stats.passAccuracyHome}%</span>
+                    <span className="text-neutral-500 font-bold">Pass Accuracy</span>
+                    <span>{selectedMatchDetails.stats.passAccuracyAway}%</span>
+                  </div>
+                  <div className="w-full h-2 bg-neutral-800 rounded-full flex overflow-hidden">
+                    <div 
+                      className="bg-emerald-500 h-full transition-all duration-1000" 
+                      style={{ width: `${selectedMatchDetails.stats.passAccuracyHome}%` }} 
+                    />
+                    <div 
+                      className="bg-neutral-700 h-full transition-all duration-1000" 
+                      style={{ width: `${selectedMatchDetails.stats.passAccuracyAway}%` }} 
+                    />
+                  </div>
+                </div>
+
+                {/* Stat Line: Fouls */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs font-mono text-neutral-300">
+                    <span>{selectedMatchDetails.stats.foulsHome}</span>
+                    <span className="text-neutral-500 font-bold">Fouls</span>
+                    <span>{selectedMatchDetails.stats.foulsAway}</span>
+                  </div>
+                  <div className="w-full h-2 bg-neutral-800 rounded-full flex overflow-hidden">
+                    <div 
+                      className="bg-amber-500 h-full transition-all duration-1000" 
+                      style={{ width: `${(selectedMatchDetails.stats.foulsHome / (selectedMatchDetails.stats.foulsHome + selectedMatchDetails.stats.foulsAway)) * 100}%` }} 
+                    />
+                    <div 
+                      className="bg-neutral-600 h-full transition-all duration-1000" 
+                      style={{ width: `${(selectedMatchDetails.stats.foulsAway / (selectedMatchDetails.stats.foulsHome + selectedMatchDetails.stats.foulsAway)) * 100}%` }} 
+                    />
+                  </div>
                 </div>
               </div>
 
-              {/* Secure Credentials Explanation banner */}
-              <div className="bg-neutral-950 border border-white/5 rounded-2xl p-5 space-y-3 font-mono text-[10px] text-neutral-400">
-                <span className="text-xs font-bold text-white uppercase block mb-1">Configuring Real Banking</span>
-                <p>
-                  To transition this workspace applet into production payouts, declare Stripe Secrets in your Environment Settings:
-                </p>
-                <div className="bg-neutral-900 p-2.5 rounded border border-white/5 text-[9px] text-yellow-500 break-all select-all">
-                  VITE_STRIPE_PUBLIC_KEY=pk_live_...<br />
-                  STRIPE_SECRET_KEY=sk_live_...
-                </div>
-                <p>
-                  The checkout flows and direct IBAN transfers will securely leverage real Stripe Connect infrastructure.
-                </p>
+              {/* Footer Close button */}
+              <div className="mt-8 flex justify-center">
+                <button
+                  onClick={() => setSelectedMatch(null)}
+                  className="px-6 py-2.5 bg-neutral-900 border border-white/15 rounded-xl text-xs font-bold font-mono text-neutral-300 hover:text-white hover:border-white/30 transition active:scale-95 cursor-pointer"
+                >
+                  DISMISS CEREMONY DETAILS
+                </button>
               </div>
-            </div>
-
-            {/* Column 2: Linking Bank Form & Withdraw Panel */}
-            <div className="lg:col-span-2 space-y-6">
-              {!bankLinked ? (
-                /* Bank Account Link Form */
-                <form onSubmit={handleLinkBank} className="bg-neutral-900/40 border border-white/10 rounded-2xl p-6 backdrop-blur-md space-y-4">
-                  <h4 className="text-sm font-bold text-white uppercase flex items-center gap-2 mb-2">
-                    <Building className="w-4 h-4 text-yellow-400" />
-                    Link Bank Account for Payouts
-                  </h4>
-
-                  {linkError && (
-                    <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs p-3 rounded-xl font-mono">
-                      {linkError}
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-mono text-neutral-400 uppercase">Account Holder Name</label>
-                      <input
-                        type="text"
-                        placeholder="John Doe"
-                        value={bankDetails.holderName}
-                        onChange={e => { setBankDetails({ ...bankDetails, holderName: e.target.value }); setLinkError(""); }}
-                        className="w-full bg-neutral-950 border border-white/5 rounded-xl px-4 py-2.5 text-xs text-white outline-none focus:border-yellow-500/40"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-mono text-neutral-400 uppercase">Bank / Institution Name</label>
-                      <input
-                        type="text"
-                        placeholder="Chase Bank, Wells Fargo, etc."
-                        value={bankDetails.bankName}
-                        onChange={e => { setBankDetails({ ...bankDetails, bankName: e.target.value }); setLinkError(""); }}
-                        className="w-full bg-neutral-950 border border-white/5 rounded-xl px-4 py-2.5 text-xs text-white outline-none focus:border-yellow-500/40"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-mono text-neutral-400 uppercase">Routing / SWIFT Code</label>
-                      <input
-                        type="text"
-                        placeholder="9-digit routing number"
-                        value={bankDetails.routingNumber}
-                        onChange={e => { setBankDetails({ ...bankDetails, routingNumber: e.target.value }); setLinkError(""); }}
-                        className="w-full bg-neutral-950 border border-white/5 rounded-xl px-4 py-2.5 text-xs text-white font-mono outline-none focus:border-yellow-500/40"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-mono text-neutral-400 uppercase">Account Number / IBAN</label>
-                      <input
-                        type="password"
-                        placeholder="Standard account number"
-                        value={bankDetails.accountNumber}
-                        onChange={e => { setBankDetails({ ...bankDetails, accountNumber: e.target.value }); setLinkError(""); }}
-                        className="w-full bg-neutral-950 border border-white/5 rounded-xl px-4 py-2.5 text-xs text-white font-mono outline-none focus:border-yellow-500/40"
-                      />
-                    </div>
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={isLinking}
-                    className="w-full py-3 bg-gradient-to-r from-yellow-500 to-amber-500 text-black font-extrabold text-xs tracking-wider rounded-xl hover:brightness-110 transition cursor-pointer flex items-center justify-center gap-2 uppercase disabled:opacity-50 mt-4"
-                  >
-                    {isLinking ? (
-                      <>
-                        <RefreshCw className="w-4 h-4 animate-spin" />
-                        Verifying Routing Credentials...
-                      </>
-                    ) : (
-                      "Verify & Link Bank Account"
-                    )}
-                  </button>
-                </form>
-              ) : (
-                /* Bank Account Linked Panel */
-                <div className="space-y-6">
-                  <div className="bg-neutral-900/40 border border-white/10 rounded-2xl p-6 backdrop-blur-md relative overflow-hidden">
-                    <div className="absolute top-4 right-4 text-[9px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-full flex items-center gap-1">
-                      <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
-                      ACTIVE FOR PAYOUTS
-                    </div>
-
-                    <h4 className="text-sm font-bold text-white uppercase flex items-center gap-2 mb-4">
-                      <Building className="w-4 h-4 text-emerald-400" />
-                      Connected Bank Details
-                    </h4>
-
-                    <div className="grid grid-cols-2 gap-4 max-w-md text-xs font-mono mb-6 bg-neutral-950 p-4 rounded-xl border border-white/5">
-                      <div>
-                        <span className="text-neutral-500 uppercase text-[9px]">Account Holder</span>
-                        <p className="text-white font-bold mt-1">{bankDetails.holderName}</p>
-                      </div>
-                      <div>
-                        <span className="text-neutral-500 uppercase text-[9px]">Bank Institution</span>
-                        <p className="text-white font-bold mt-1">{bankDetails.bankName}</p>
-                      </div>
-                      <div className="mt-2">
-                        <span className="text-neutral-500 uppercase text-[9px]">Routing Transit Number</span>
-                        <p className="text-white font-bold mt-1">•••••{bankDetails.routingNumber.slice(-4)}</p>
-                      </div>
-                      <div className="mt-2">
-                        <span className="text-neutral-500 uppercase text-[9px]">Account Number</span>
-                        <p className="text-white font-bold mt-1">••••••••{bankDetails.accountNumber.slice(-4)}</p>
-                      </div>
-                    </div>
-
-                    <button
-                      onClick={handleUnlinkBank}
-                      className="px-4 py-2 bg-neutral-950 border border-white/10 rounded-xl hover:bg-red-500/10 hover:border-red-500/20 hover:text-red-400 transition text-[10px] font-mono uppercase cursor-pointer"
-                    >
-                      Unlink Bank Account
-                    </button>
-                  </div>
-
-                  {/* Cash Out Form */}
-                  <div className="bg-neutral-900/40 border border-white/10 rounded-2xl p-6 backdrop-blur-md">
-                    <h4 className="text-sm font-bold text-white uppercase flex items-center gap-2 mb-2">
-                      <DollarSign className="w-4 h-4 text-yellow-400" />
-                      Request Cash Withdrawal
-                    </h4>
-                    <p className="text-xs text-neutral-400 mb-6 font-mono">
-                      Convert prediction coins and withdraw funds securely into connected bank account.
-                    </p>
-
-                    {withdrawalSuccess && (
-                      <div className="bg-emerald-500/15 border border-emerald-500/20 text-emerald-400 text-xs p-4 rounded-xl mb-6 font-mono flex items-center gap-2.5">
-                        <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
-                        <span>
-                          <strong>Withdrawal Requested Successfully!</strong> Your request has been queued. Funds should hit your account in 48 hours.
-                        </span>
-                      </div>
-                    )}
-
-                    <div className="max-w-md space-y-4">
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-mono text-neutral-400 uppercase">Amount to Withdraw ($ USD)</label>
-                        <div className="relative">
-                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-mono text-neutral-500">$</span>
-                          <input
-                            type="number"
-                            placeholder="0.00"
-                            value={withdrawalAmount}
-                            onChange={e => { setWithdrawalAmount(e.target.value); }}
-                            className="w-full bg-neutral-950 border border-white/5 rounded-xl pl-8 pr-4 py-3 text-xs text-white font-mono outline-none focus:border-yellow-500/40"
-                          />
-                        </div>
-                        <span className="text-[9px] font-mono text-neutral-500 block">
-                          Maximum Cashout Value: ${(user.coins * 0.1).toFixed(2)} USD
-                        </span>
-                      </div>
-
-                      <button
-                        onClick={handleWithdraw}
-                        disabled={withdrawalPending || !withdrawalAmount || parseFloat(withdrawalAmount) <= 0}
-                        className="w-full py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-extrabold text-xs tracking-wider rounded-xl hover:brightness-110 transition cursor-pointer flex items-center justify-center gap-2 uppercase disabled:opacity-50"
-                      >
-                        {withdrawalPending ? (
-                          <>
-                            <RefreshCw className="w-4 h-4 animate-spin" />
-                            Processing Secure Bank Transfer...
-                          </>
-                        ) : (
-                          "Initiate Instant Transfer"
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

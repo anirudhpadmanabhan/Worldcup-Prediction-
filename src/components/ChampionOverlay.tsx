@@ -340,77 +340,74 @@ export default function ChampionOverlay({
                 </p>
               </div>
             ) : (
-              <form onSubmit={handleQuickSaveSubmit} className="space-y-3">
-                {saveError && (
-                  <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 text-[10px] text-red-400 font-mono text-center">
-                    {saveError}
-                  </div>
-                )}
-                
-                <div className="space-y-1">
-                  <label className="block text-[9px] font-mono uppercase text-neutral-400">
-                    Full Name
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={guestName}
-                    onChange={(e) => setGuestName(e.target.value)}
-                    placeholder="e.g. Anirudh P"
-                    className="w-full bg-black border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-neutral-500 outline-none focus:border-yellow-500/50 transition font-sans"
-                  />
+              <div className="space-y-4">
+                <div className="bg-neutral-950 p-3 rounded-2xl border border-white/5 space-y-3">
+                  <span className="text-[10px] font-mono font-black text-emerald-400 block uppercase tracking-wider">🛡️ Recommended Secure Option</span>
+                  <p className="text-[10px] text-neutral-400 font-mono leading-relaxed">
+                    Verify via Gmail or Mobile OTP for premium access. This lets you check, sync, and edit predictions up to the final match.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onTriggerLogin();
+                      audioSynth.playSelection();
+                    }}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:brightness-110 text-white border border-emerald-400/20 rounded-xl text-[10px] font-black uppercase tracking-wider transition cursor-pointer"
+                  >
+                    <span>🌐 Login with Gmail or Mobile OTP</span>
+                  </button>
                 </div>
-
-                <div className="space-y-1">
-                  <label className="block text-[9px] font-mono uppercase text-neutral-400">
-                    Email or Mobile Number
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={guestContact}
-                    onChange={(e) => setGuestContact(e.target.value)}
-                    placeholder="e.g. +91 9876543210 or user@gmail.com"
-                    className="w-full bg-black border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-neutral-500 outline-none focus:border-yellow-500/50 transition font-sans"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  className="w-full py-2.5 bg-gradient-to-r from-yellow-500 to-amber-500 text-black font-black text-xs uppercase tracking-wider rounded-xl hover:brightness-110 transition duration-200 cursor-pointer shadow-md"
-                >
-                  Save Bracket Instantly
-                </button>
 
                 <div className="relative flex py-1 items-center">
                   <div className="flex-grow border-t border-white/5"></div>
-                  <span className="flex-shrink mx-3 text-[9px] text-neutral-500 font-mono uppercase">or social login</span>
+                  <span className="flex-shrink mx-3 text-[9px] text-neutral-500 font-mono uppercase">or quick option</span>
                   <div className="flex-grow border-t border-white/5"></div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
+                <form onSubmit={handleQuickSaveSubmit} className="space-y-3">
+                  <span className="text-[10px] font-mono font-black text-yellow-500 block uppercase tracking-wider">👤 Simple Name & Mobile Option</span>
+                  {saveError && (
+                    <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 text-[10px] text-red-400 font-mono text-center">
+                      {saveError}
+                    </div>
+                  )}
+                  
+                  <div className="space-y-1">
+                    <label className="block text-[9px] font-mono uppercase text-neutral-400">
+                      Full Name
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={guestName}
+                      onChange={(e) => setGuestName(e.target.value)}
+                      placeholder="e.g. Anirudh P"
+                      className="w-full bg-black border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-neutral-500 outline-none focus:border-yellow-500/50 transition font-sans"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-[9px] font-mono uppercase text-neutral-400">
+                      Mobile Number
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={guestContact}
+                      onChange={(e) => setGuestContact(e.target.value)}
+                      placeholder="e.g. +91 9876543210"
+                      className="w-full bg-black border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-neutral-500 outline-none focus:border-yellow-500/50 transition font-sans"
+                    />
+                  </div>
+
                   <button
-                    type="button"
-                    onClick={() => {
-                      onTriggerLogin();
-                      audioSynth.playSelection();
-                    }}
-                    className="flex items-center justify-center gap-1.5 py-2 bg-neutral-950 hover:bg-neutral-900 border border-white/5 rounded-xl text-[10px] font-bold text-white transition cursor-pointer"
+                    type="submit"
+                    className="w-full py-2.5 bg-gradient-to-r from-yellow-500 to-amber-500 text-black font-black text-xs uppercase tracking-wider rounded-xl hover:brightness-110 transition duration-200 cursor-pointer shadow-md"
                   >
-                    <span>🌐 Google</span>
+                    Save Bracket instantly
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onTriggerLogin();
-                      audioSynth.playSelection();
-                    }}
-                    className="flex items-center justify-center gap-1.5 py-2 bg-neutral-950 hover:bg-neutral-900 border border-white/5 rounded-xl text-[10px] font-bold text-white transition cursor-pointer"
-                  >
-                    <span>🍎 Apple</span>
-                  </button>
-                </div>
-              </form>
+                </form>
+              </div>
             )}
           </div>
         ) : (
